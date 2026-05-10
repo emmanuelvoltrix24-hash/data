@@ -114,27 +114,43 @@ def get_live(period):
     return None
 
 def fetch_odds(round_number_id, competition_id=1):
-    """Fetch only 1X2 odds — fast single request."""
+    """Fetch all 27 markets concurrently."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    matches = {}
+    lock = threading.Lock()
+
+    def fetch_market(market):
+        try:
+            payload = {'round_number_id': round_number_id, 'competition_id': competition_id,
+                       'country_id': None, 'market_id': market}
+            r = requests.post('https://vl.betkraft.co.uk/data',
+                              json=payload, headers=BK_HEADERS, timeout=10)
+            data = r.json()
+            if data.get('status_code') != 200:
+                return
+            for m in data['data']['matches']:
+                eid = m['event_id']
+                with lock:
+                    if eid not in matches:
+                        matches[eid] = {'event_id': eid, 'home_team': m['home_team'],
+                                        'away_team': m['away_team'], 'htf': m.get('htf',''),
+                                        'atf': m.get('atf',''), 'markets': {}}
+                    if m.get('markets'):
+                        matches[eid]['markets'][market] = m['markets'][0]['outcomes']
+        except: pass
+
+    with ThreadPoolExecutor(max_workers=10) as ex:
+        list(as_completed([ex.submit(fetch_market, mkt) for mkt in ALL_MARKETS]))
+    return matches
+
+
+def get_standings(competition_id=1):
     try:
-        payload = {'round_number_id': round_number_id, 'competition_id': competition_id,
-                   'country_id': None, 'market_id': '1X2'}
-        r = requests.post('https://vl.betkraft.co.uk/data',
-                          json=payload, headers=BK_HEADERS, timeout=10)
-        data = r.json()
-        if data.get('status_code') != 200:
-            return {}
-        matches = {}
-        for m in data['data']['matches']:
-            eid = m['event_id']
-            matches[eid] = {
-                'event_id': eid, 'home_team': m['home_team'],
-                'away_team': m['away_team'], 'htf': m.get('htf',''),
-                'atf': m.get('atf',''),
-                'markets': {'1X2': m['markets'][0]['outcomes']} if m.get('markets') else {}
-            }
-        return matches
+        r = requests.get(f'https://vl.betkraft.co.uk/standing/{competition_id}/0',
+                         headers=BK_HEADERS, timeout=10)
+        return r.json()['data']['standings']
     except:
-        return {}
+        return []
 
 
 # ── Collector loop ────────────────────────────────────────────────────────────
