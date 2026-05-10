@@ -94,6 +94,8 @@ def get_standings(competition_id=1):
         return r.json()['data']['standings']
     except:
         return []
+
+def get_periods(competition_id=1):
     for _ in range(3):
         try:
             r = requests.get(f'https://vl.betkraft.co.uk/periods/{competition_id}',
