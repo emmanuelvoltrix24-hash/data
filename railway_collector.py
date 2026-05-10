@@ -87,7 +87,13 @@ def outcome(hg, ag):
 def to_utc(s):
     return datetime.strptime(s, '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
 
-def get_periods(competition_id=1):
+def get_standings(competition_id=1):
+    try:
+        r = requests.get(f'https://vl.betkraft.co.uk/standing/{competition_id}/0',
+                         headers=BK_HEADERS, timeout=10)
+        return r.json()['data']['standings']
+    except:
+        return []
     for _ in range(3):
         try:
             r = requests.get(f'https://vl.betkraft.co.uk/periods/{competition_id}',
@@ -195,6 +201,7 @@ def collect():
                             'chain_break': chain_broken,
                             'has_odds': any(m['pre_markets'] for m in matches),
                             'matches': matches,
+                            'standings': get_standings(),
                         }
                         chain_broken = False
                         save_round(round_data)
