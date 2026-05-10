@@ -1,0 +1,200 @@
+
+
+Deployments
+Variables
+Metrics
+Settings
+Unexposed service
+3.13.13python@3.13.13
+US West
+1 Replica
+-data
+/
+Removed
+May 10, 2026, 9:01 PM UTC
+Filter and search logs
+You reached the start of the range
+May 10, 2026, 9:01 PM
+
+{"message":"Starting Container","severity":"info","attributes":{"level":"info"},"timestamp":"2026-05-10T21:01:57.344607804Z"}
+
+{"message":"Traceback (most recent call last):","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:01:57.356789769Z"}
+
+{"message":"  File \"/app/railway_collector.py\", line 9, in <module>","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:01:57.356794008Z"}
+
+{"message":"    import psycopg2","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:01:57.356801745Z"}
+
+{"message":"  File \"/app/.venv/lib/python3.13/site-packages/psycopg2/__init__.py\", line 51, in <module>","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:01:57.356806135Z"}
+
+{"message":"    from psycopg2._psycopg import (                     # noqa","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:01:57.356810213Z"}
+
+{"message":"    ...<10 lines>...","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:01:57.356814078Z"}
+
+{"message":"    )","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:01:57.356818667Z"}
+
+{"message":"ImportError: libpq.so.5: cannot open shared object file: No such file or directory","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:01:57.356822477Z"}
+
+{"message":"    ...<10 lines>...","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:01:58.331925941Z"}
+
+{"message":"Traceback (most recent call last):","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:01:58.331930304Z"}
+
+{"message":"    )","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:01:58.331934780Z"}
+
+{"message":"  File \"/app/railway_collector.py\", line 9, in <module>","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:01:58.331936617Z"}
+
+{"message":"ImportError: libpq.so.5: cannot open shared object file: No such file or directory","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:01:58.331941055Z"}
+
+{"message":"    import psycopg2","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:01:58.331941319Z"}
+
+{"message":"  File \"/app/.venv/lib/python3.13/site-packages/psycopg2/__init__.py\", line 51, in <module>","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:01:58.331945705Z"}
+
+{"message":"    from psycopg2._psycopg import (                     # noqa","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:01:58.331949008Z"}
+
+{"message":"    ...<10 lines>...","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:01:59.353590494Z"}
+
+{"message":"  File \"/app/railway_collector.py\", line 9, in <module>","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:01:59.353594447Z"}
+
+{"message":"Traceback (most recent call last):","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:01:59.353594588Z"}
+
+{"message":"    )","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:01:59.353599131Z"}
+
+{"message":"ImportError: libpq.so.5: cannot open shared object file: No such file or directory","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:01:59.353599577Z"}
+
+{"message":"    import psycopg2","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:01:59.353604161Z"}
+
+{"message":"  File \"/app/.venv/lib/python3.13/site-packages/psycopg2/__init__.py\", line 51, in <module>","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:01:59.353606035Z"}
+
+{"message":"    from psycopg2._psycopg import (                     # noqa","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:01:59.353615384Z"}
+
+{"message":"Traceback (most recent call last):","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:00.402258113Z"}
+
+{"message":"  File \"/app/railway_collector.py\", line 9, in <module>","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:00.402262997Z"}
+
+{"message":"    import psycopg2","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:00.402265907Z"}
+
+{"message":"  File \"/app/.venv/lib/python3.13/site-packages/psycopg2/__init__.py\", line 51, in <module>","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:00.402268470Z"}
+
+{"message":"    from psycopg2._psycopg import (                     # noqa","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:00.402271069Z"}
+
+{"message":"    ...<10 lines>...","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:00.402273793Z"}
+
+{"message":"    )","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:00.402276314Z"}
+
+{"message":"ImportError: libpq.so.5: cannot open shared object file: No such file or directory","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:00.402278778Z"}
+
+{"message":"Traceback (most recent call last):","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:01.662384383Z"}
+
+{"message":"  File \"/app/railway_collector.py\", line 9, in <module>","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:01.662387615Z"}
+
+{"message":"    import psycopg2","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:01.662391435Z"}
+
+{"message":"  File \"/app/.venv/lib/python3.13/site-packages/psycopg2/__init__.py\", line 51, in <module>","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:01.662395182Z"}
+
+{"message":"    from psycopg2._psycopg import (                     # noqa","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:01.662398461Z"}
+
+{"message":"    ...<10 lines>...","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:01.662401875Z"}
+
+{"message":"    )","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:01.662405603Z"}
+
+{"message":"ImportError: libpq.so.5: cannot open shared object file: No such file or directory","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:01.662410548Z"}
+
+{"message":"Traceback (most recent call last):","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:02.795659801Z"}
+
+{"message":"  File \"/app/railway_collector.py\", line 9, in <module>","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:02.795667035Z"}
+
+{"message":"    import psycopg2","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:02.795672004Z"}
+
+{"message":"  File \"/app/.venv/lib/python3.13/site-packages/psycopg2/__init__.py\", line 51, in <module>","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:02.795675909Z"}
+
+{"message":"    from psycopg2._psycopg import (                     # noqa","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:02.795679663Z"}
+
+{"message":"    ...<10 lines>...","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:02.795683614Z"}
+
+{"message":"    )","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:02.795687853Z"}
+
+{"message":"ImportError: libpq.so.5: cannot open shared object file: No such file or directory","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:02.795692158Z"}
+
+{"message":"Traceback (most recent call last):","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:03.947750329Z"}
+
+{"message":"  File \"/app/railway_collector.py\", line 9, in <module>","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:03.947755904Z"}
+
+{"message":"    import psycopg2","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:03.947759494Z"}
+
+{"message":"  File \"/app/.venv/lib/python3.13/site-packages/psycopg2/__init__.py\", line 51, in <module>","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:03.947763166Z"}
+
+{"message":"    from psycopg2._psycopg import (                     # noqa","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:03.947766229Z"}
+
+{"message":"    ...<10 lines>...","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:03.947769482Z"}
+
+{"message":"    )","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:03.947772360Z"}
+
+{"message":"ImportError: libpq.so.5: cannot open shared object file: No such file or directory","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:03.947775257Z"}
+
+{"message":"Traceback (most recent call last):","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:05.113507094Z"}
+
+{"message":"  File \"/app/railway_collector.py\", line 9, in <module>","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:05.113522936Z"}
+
+{"message":"    import psycopg2","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:05.113526587Z"}
+
+{"message":"  File \"/app/.venv/lib/python3.13/site-packages/psycopg2/__init__.py\", line 51, in <module>","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:05.113529494Z"}
+
+{"message":"    from psycopg2._psycopg import (                     # noqa","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:05.113532575Z"}
+
+{"message":"    ...<10 lines>...","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:05.113535799Z"}
+
+{"message":"    )","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:05.113539286Z"}
+
+{"message":"ImportError: libpq.so.5: cannot open shared object file: No such file or directory","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:05.113543862Z"}
+
+{"message":"Traceback (most recent call last):","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:06.573512577Z"}
+
+{"message":"  File \"/app/railway_collector.py\", line 9, in <module>","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:06.573515603Z"}
+
+{"message":"    import psycopg2","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:06.573518968Z"}
+
+{"message":"  File \"/app/.venv/lib/python3.13/site-packages/psycopg2/__init__.py\", line 51, in <module>","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:06.573521960Z"}
+
+{"message":"    from psycopg2._psycopg import (                     # noqa","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:06.573525269Z"}
+
+{"message":"    ...<10 lines>...","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:06.573529164Z"}
+
+{"message":"    )","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:06.573532255Z"}
+
+{"message":"ImportError: libpq.so.5: cannot open shared object file: No such file or directory","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:06.573535139Z"}
+
+{"message":"    ...<10 lines>...","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:07.576573405Z"}
+
+{"message":"    )","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:07.576581633Z"}
+
+{"message":"ImportError: libpq.so.5: cannot open shared object file: No such file or directory","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:07.576586957Z"}
+
+{"message":"Traceback (most recent call last):","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:07.576690728Z"}
+
+{"message":"  File \"/app/railway_collector.py\", line 9, in <module>","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:07.576694414Z"}
+
+{"message":"    import psycopg2","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:07.576698750Z"}
+
+{"message":"  File \"/app/.venv/lib/python3.13/site-packages/psycopg2/__init__.py\", line 51, in <module>","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:07.576703461Z"}
+
+{"message":"    from psycopg2._psycopg import (                     # noqa","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:07.576707321Z"}
+
+{"message":"Traceback (most recent call last):","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:08.764233377Z"}
+
+{"message":"  File \"/app/railway_collector.py\", line 9, in <module>","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:08.764236592Z"}
+
+{"message":"    import psycopg2","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:08.764240261Z"}
+
+{"message":"  File \"/app/.venv/lib/python3.13/site-packages/psycopg2/__init__.py\", line 51, in <module>","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:08.764243535Z"}
+
+{"message":"    from psycopg2._psycopg import (                     # noqa","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:08.764246566Z"}
+
+{"message":"    ...<10 lines>...","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:08.764250155Z"}
+
+{"message":"    )","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:08.764253240Z"}
+
+{"message":"ImportError: libpq.so.5: cannot open shared object file: No such file or directory","severity":"error","attributes":{"level":"error"},"timestamp":"2026-05-10T21:02:08.764256474Z"}
+
+{"message":"Stopping Container","severity":"info","attributes":{"level":"info"},"timestamp":"2026-05-10T21:03:12.194361885Z"}
+
+You reached the end of the range
+May 10, 2026, 9:03 PM
