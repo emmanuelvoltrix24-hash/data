@@ -85,7 +85,7 @@ def outcome(hg, ag):
     return 'W' if hg > ag else ('L' if hg < ag else 'D')
 
 def to_utc(s):
-    return datetime.strptime(s, '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc) - timedelta(hours=3)
+    return datetime.strptime(s, '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
 
 def get_periods(competition_id=1):
     for _ in range(3):
