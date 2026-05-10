@@ -6,8 +6,8 @@ Collects round results + odds, saves to Postgres, exposes REST API.
 import os, json, time, threading, requests
 from datetime import datetime, timezone, timedelta
 from flask import Flask, jsonify
-import psycopg
-from psycopg.rows import dict_row
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
@@ -31,7 +31,7 @@ BK_HEADERS = {
 # ── Database ──────────────────────────────────────────────────────────────────
 
 def get_db():
-    return psycopg.connect(DATABASE_URL, row_factory=dict_row)
+    return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
 
 def init_db():
     with get_db() as conn:
