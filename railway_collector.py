@@ -108,27 +108,27 @@ def get_live(period):
     return None
 
 def fetch_odds(round_number_id, competition_id=1):
-    matches = {}
-    failed = 0
-    for market in ALL_MARKETS:
-        try:
-            payload = {'round_number_id': round_number_id, 'competition_id': competition_id,
-                       'country_id': None, 'market_id': market}
-            r = requests.post('https://vl.betkraft.co.uk/data',
-                              json=payload, headers=BK_HEADERS, timeout=10)
-            data = r.json()
-            if data.get('status_code') != 200:
-                failed += 1; continue
-            for m in data['data']['matches']:
-                eid = m['event_id']
-                if eid not in matches:
-                    matches[eid] = {'event_id': eid, 'home_team': m['home_team'],
-                                    'away_team': m['away_team'], 'htf': m.get('htf',''),
-                                    'atf': m.get('atf',''), 'markets': {}}
-                if m.get('markets'):
-                    matches[eid]['markets'][market] = m['markets'][0]['outcomes']
-        except: failed += 1
-    return matches if matches else {}
+    """Fetch only 1X2 odds — fast single request."""
+    try:
+        payload = {'round_number_id': round_number_id, 'competition_id': competition_id,
+                   'country_id': None, 'market_id': '1X2'}
+        r = requests.post('https://vl.betkraft.co.uk/data',
+                          json=payload, headers=BK_HEADERS, timeout=10)
+        data = r.json()
+        if data.get('status_code') != 200:
+            return {}
+        matches = {}
+        for m in data['data']['matches']:
+            eid = m['event_id']
+            matches[eid] = {
+                'event_id': eid, 'home_team': m['home_team'],
+                'away_team': m['away_team'], 'htf': m.get('htf',''),
+                'atf': m.get('atf',''),
+                'markets': {'1X2': m['markets'][0]['outcomes']} if m.get('markets') else {}
+            }
+        return matches
+    except:
+        return {}
 
 
 # ── Collector loop ────────────────────────────────────────────────────────────
