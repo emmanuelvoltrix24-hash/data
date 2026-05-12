@@ -1,1 +1,1 @@
-web: python railway_collector.py
+web: python bongobongo_collector.py
