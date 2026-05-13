@@ -33,21 +33,8 @@ def get_db():
     return psycopg.connect(DATABASE_URL, row_factory=dict_row)
 
 def init_db():
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS rounds (
-                    round_id BIGINT PRIMARY KEY,
-                    league TEXT,
-                    competition_id INT,
-                    collected_at TIMESTAMP,
-                    chain_break BOOLEAN,
-                    has_odds BOOLEAN,
-                    data JSONB
-                )
-            """)
-        conn.commit()
-    print("DB initialized")
+    from db import init_db as _init
+    _init()
 
 def save_round(round_data):
     with get_db() as conn:
@@ -55,9 +42,9 @@ def save_round(round_data):
             cur.execute("""
                 INSERT INTO rounds (round_id, league, competition_id, collected_at, chain_break, has_odds, data)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (round_id) DO NOTHING
+                ON CONFLICT (source, round_id) DO NOTHING
             """, (
-                round_data['round_id'],
+                str(round_data['round_id']),
                 round_data.get('league', 'English'),
                 round_data.get('competition_id', 1),
                 round_data['collected_at'],
@@ -70,8 +57,8 @@ def save_round(round_data):
 def get_seen_ids():
     with get_db() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT round_id FROM rounds")
-            return {row['round_id'] for row in cur.fetchall()}
+            cur.execute("SELECT round_id FROM rounds WHERE source='betkraft' OR source IS NULL")
+            return {int(row['round_id']) for row in cur.fetchall() if row['round_id'].isdigit()}
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -292,15 +279,15 @@ def get_rounds():
 def get_latest():
     with get_db() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT data FROM rounds ORDER BY round_id DESC LIMIT 1")
+            cur.execute("SELECT data FROM rounds WHERE source='betkraft' ORDER BY round_id DESC LIMIT 1")
             row = cur.fetchone()
     return jsonify(row['data'] if row else {})
 
-@app.route('/rounds/<int:round_id>')
+@app.route('/rounds/<round_id>')
 def get_round(round_id):
     with get_db() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT data FROM rounds WHERE round_id = %s", (round_id,))
+            cur.execute("SELECT data FROM rounds WHERE round_id = %s", (str(round_id),))
             row = cur.fetchone()
     return jsonify(row['data'] if row else {})
 

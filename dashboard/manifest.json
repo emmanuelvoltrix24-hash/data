@@ -1,0 +1,14 @@
+{
+  "name": "VFL Command",
+  "short_name": "VFL CMD",
+  "description": "VFL Betting Bot Dashboard",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a1a",
+  "theme_color": "#0a0a1a",
+  "orientation": "portrait",
+  "icons": [
+    {"src": "icon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png"}
+  ]
+}

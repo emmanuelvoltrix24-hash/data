@@ -1,4 +1,4 @@
-web: python railway_collector.py
+web: python dashboard_api.py
 betkraft: python railway_collector.py
 bongobongo: python bongobongo_collector.py
 betpawa: python betpawa_collector.py
