@@ -1,20 +1,17 @@
 #!/usr/bin/env python3
 """
 VFL Collector — Railway deployment
-Collects round results + odds, saves to Postgres, exposes REST API.
+Collects round results + odds, saves to Postgres via unified db.py, exposes REST API.
 """
 import os, json, time, threading, requests
 from datetime import datetime, timezone, timedelta
 from flask import Flask, jsonify
-import psycopg
-from psycopg.rows import dict_row
+from db import init_db, save_round as db_save_round, get_seen_ids as db_get_seen_ids
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
 DATABASE_URL = os.environ['DATABASE_URL']
 PORT         = int(os.environ.get('PORT', 8080))
-
-LIVE_URL = 'https://vl.betkraft.co.uk/live'
 ALL_MARKETS = ['1X2','GG','TG15','TG25','DC','TG35','H1X2','DCH','HS','1X2G',
                '1X2OU15','1X2OU25','1X2OU35','1X2OU45','1X2OU55','CS','DR',
                'FTS','HGG','MG','T1G','T1OU15','T2G','T2OU15','TFG','TG','TGOE']
@@ -197,6 +194,7 @@ def collect():
                         seen.add(rid)
                         live_sorted = sorted(live, key=lambda m: m['event_id'])
                         odds_map = pending_odds.pop(rid, {})
+                        season_id = live_sorted[0].get('season_id') if live_sorted else None
 
                         matches = []
                         for i, m in enumerate(live_sorted, 1):
@@ -213,6 +211,7 @@ def collect():
 
                         round_data = {
                             'round_id': rid,
+                            'season_id': season_id,
                             'league': 'English',
                             'competition_id': 1,
                             'collected_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -223,6 +222,20 @@ def collect():
                         }
                         chain_broken = False
                         save_round(round_data)
+
+                        # Also write to unified schema
+                        try:
+                            unified_matches = [{
+                                'n': m['n'], 'home': m['home_team'], 'away': m['away_team'],
+                                'hg': m['hg'], 'ag': m['ag'], 'result': m['result'],
+                                'outcome': m['outcome'], 'parity': m['parity'],
+                                'odds': {'1X2': m['pre_markets'].get('1X2', [])},
+                                **{k: v for k, v in m['pre_markets'].items() if k != '1X2'},
+                            } for m in matches]
+                            db_save_round(str(rid), 'betkraft', 'English',
+                                          unified_matches, round_data['standings'])
+                        except Exception as ue:
+                            print(f"Unified DB write error: {ue}")
 
                         slots = {m['n']: m for m in matches}
                         p5  = slots[5]['parity']  if 5  in slots else '?'
