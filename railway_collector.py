@@ -4,6 +4,8 @@ VFL Collector — Railway deployment
 Collects round results + odds, saves to Postgres via unified db.py, exposes REST API.
 """
 import os, json, time, threading, requests
+import psycopg
+from psycopg.rows import dict_row
 from datetime import datetime, timezone, timedelta
 from flask import Flask, jsonify
 from db import init_db, save_round as db_save_round, get_seen_ids as db_get_seen_ids
