@@ -10,6 +10,14 @@ import requests
 app = Flask(__name__, static_folder='dashboard')
 DB = os.environ.get('DATABASE_URL', '')
 
+# Shared state updated by prediction engine thread
+engine_state = {
+    'last_round': None,
+    'last_prediction': None,
+    'last_updated': None,
+    'bets_placed': 0,
+}
+
 BK_HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json",
                "Content-Type": "application/json", "tz": "UTC",
                "Referer": "https://legacy-ui.betkraft.co.uk/"}
@@ -125,6 +133,10 @@ def activity():
             return jsonify([dict(r) for r in cur.fetchall()])
 
 # ── PWA static files ──────────────────────────────────────────────────────────
+
+@app.route('/api/engine')
+def engine():
+    return jsonify(engine_state)
 
 @app.route('/')
 def index():
