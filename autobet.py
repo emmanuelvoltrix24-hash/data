@@ -5,7 +5,7 @@ Two modes:
   MODE = 'api' — direct API call (fast, with human delay + UA spoofing)
   MODE = 'ui'  — full UI click-through via Playwright (slowest, most human-like)
 """
-import asyncio, json, random, time
+import asyncio, json, random, time, os
 from datetime import datetime
 from playwright.async_api import async_playwright
 from pnl import log_bet
@@ -15,8 +15,19 @@ IFRAME_URL = "https://ug.bandabets.com/iframe?IsDemo=0&providerID=55&gameName=Eu
 
 STAKE_BASE = 50
 DRY_RUN    = False
-MODE       = 'ui'   # 'api' or 'ui'
-HEADLESS   = False  # set True for production
+MODE       = 'ui'
+HEADLESS   = False  # always False — use virtual display on server
+
+# Start virtual display on Linux servers (Railway)
+_display = None
+if os.name != 'nt' and not os.environ.get('DISPLAY'):
+    try:
+        from pyvirtualdisplay import Display
+        _display = Display(visible=False, size=(1280, 900))
+        _display.start()
+    except Exception as e:
+        print(f"[autobet] Virtual display unavailable: {e} — falling back to headless")
+        HEADLESS = True
 
 HUMAN_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
