@@ -48,15 +48,38 @@ def status():
 
 @app.route('/api/balance')
 def balance():
-    """Fetch betkraft balance (others added later when sessions available)."""
+    """Fetch betkraft and bandabets balances and return both in a single response."""
     balances = {}
+
+    # Betkraft balance
     try:
         r = requests.get('https://api.betkraft.co.uk/v1/balance', headers=BK_HEADERS, timeout=5)
         data = r.json()
         if data.get('status_code') == 200:
             balances['betkraft'] = {'balance': data['data']['balance'], 'currency': data['data']['currency']}
+        else:
+            balances['betkraft'] = {'balance': None, 'currency': 'UGX', 'error': 'session required'}
     except:
         balances['betkraft'] = {'balance': None, 'currency': 'UGX', 'error': 'session required'}
+
+    # Bandabets balance
+    try:
+        apikey_file = os.path.join(os.path.dirname(__file__), 'bandabets_apikey.txt')
+        if os.path.exists(apikey_file):
+            api_key = open(apikey_file).read().strip()
+            r = requests.get('https://wallet.banda.software/balance?lang=en&country_code=ug',
+                             headers={**BK_HEADERS, 'api-key': api_key,
+                                      'Origin': 'https://ug.bandabets.com',
+                                      'Referer': 'https://ug.bandabets.com/'}, timeout=5)
+            if r.status_code == 200:
+                d = r.json()
+                balances['bandabets'] = {'main': d.get('b2', 0), 'bonus': d.get('b1', 0),
+                                         'currency': 'UGX'}
+            else:
+                balances['bandabets'] = {'error': f'unexpected status {r.status_code}'}
+    except Exception as e:
+        balances['bandabets'] = {'error': str(e)}
+
     return jsonify(balances)
 
 @app.route('/api/pnl')
@@ -160,25 +183,6 @@ def control():
         bot_config['betting'] = False
         engine_state['status'] = 'stopped'
     return jsonify({'ok': True, 'config': bot_config})
-
-@app.route('/api/balance')
-def balance():
-    balances = {}
-    try:
-        apikey_file = os.path.join(os.path.dirname(__file__), 'bandabets_apikey.txt')
-        if os.path.exists(apikey_file):
-            api_key = open(apikey_file).read().strip()
-            r = requests.get('https://wallet.banda.software/balance?lang=en&country_code=ug',
-                             headers={**BK_HEADERS, 'api-key': api_key,
-                                      'Origin': 'https://ug.bandabets.com',
-                                      'Referer': 'https://ug.bandabets.com/'}, timeout=5)
-            if r.status_code == 200:
-                d = r.json()
-                balances['bandabets'] = {'main': d.get('b2', 0), 'bonus': d.get('b1', 0),
-                                         'currency': 'UGX'}
-    except Exception as e:
-        balances['bandabets'] = {'error': str(e)}
-    return jsonify(balances)
 
 @app.route('/')
 def index():
