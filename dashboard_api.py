@@ -10,12 +10,21 @@ import requests
 app = Flask(__name__, static_folder='dashboard')
 DB = os.environ.get('DATABASE_URL', '')
 
-# Shared state updated by prediction engine thread
+# ── Shared state ──────────────────────────────────────────────────────────────
 engine_state = {
     'last_round': None,
-    'last_prediction': None,
+    'pattern': None,
+    'signal': None,
     'last_updated': None,
     'bets_placed': 0,
+    'status': 'idle',
+}
+
+bot_config = {
+    'running':        True,
+    'betting':        True,
+    'stake':          50,
+    'min_confidence': 'HIGH',
 }
 
 BK_HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json",
@@ -136,7 +145,40 @@ def activity():
 
 @app.route('/api/engine')
 def engine():
-    return jsonify(engine_state)
+    return jsonify({**engine_state, 'config': bot_config})
+
+@app.route('/api/control', methods=['POST'])
+def control():
+    from flask import request
+    data = request.json or {}
+    if 'running'        in data: bot_config['running']        = bool(data['running'])
+    if 'betting'        in data: bot_config['betting']        = bool(data['betting'])
+    if 'stake'          in data: bot_config['stake']          = int(data['stake'])
+    if 'min_confidence' in data: bot_config['min_confidence'] = data['min_confidence']
+    if data.get('emergency_stop'):
+        bot_config['running'] = False
+        bot_config['betting'] = False
+        engine_state['status'] = 'stopped'
+    return jsonify({'ok': True, 'config': bot_config})
+
+@app.route('/api/balance')
+def balance():
+    balances = {}
+    try:
+        apikey_file = os.path.join(os.path.dirname(__file__), 'bandabets_apikey.txt')
+        if os.path.exists(apikey_file):
+            api_key = open(apikey_file).read().strip()
+            r = requests.get('https://wallet.banda.software/balance?lang=en&country_code=ug',
+                             headers={**BK_HEADERS, 'api-key': api_key,
+                                      'Origin': 'https://ug.bandabets.com',
+                                      'Referer': 'https://ug.bandabets.com/'}, timeout=5)
+            if r.status_code == 200:
+                d = r.json()
+                balances['bandabets'] = {'main': d.get('b2', 0), 'bonus': d.get('b1', 0),
+                                         'currency': 'UGX'}
+    except Exception as e:
+        balances['bandabets'] = {'error': str(e)}
+    return jsonify(balances)
 
 @app.route('/')
 def index():

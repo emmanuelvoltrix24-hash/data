@@ -173,7 +173,15 @@
   .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle; margin-right: 6px; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  .empty { text-align: center; color: var(--muted); padding: 32px; font-size: 13px; }
+  .ctrl-btn {
+    padding: 8px 14px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text); font-size: 12px; font-weight: 600;
+    cursor: pointer; transition: all 0.2s;
+  }
+  .ctrl-btn:active { opacity: 0.7; }
+  .ctrl-btn.active { background: rgba(0,255,136,0.15); border-color: var(--green); color: var(--green); }
+  .ctrl-btn.inactive { background: rgba(255,68,102,0.1); border-color: var(--red); color: var(--red); }
+  .red-btn { background: rgba(255,68,102,0.1); border-color: var(--red); color: var(--red); }
 </style>
 </head>
 <body>
@@ -198,8 +206,37 @@
   <div class="stat-grid" id="stat-grid">
     <div class="stat"><div class="stat-val cyan" id="stat-rounds">--</div><div class="stat-lbl">Total Rounds</div></div>
     <div class="stat"><div class="stat-val green" id="stat-sources">--</div><div class="stat-lbl">Active Sources</div></div>
+    <div class="stat"><div class="stat-val gold" id="stat-balance">--</div><div class="stat-lbl">Balance (UGX)</div></div>
+    <div class="stat"><div class="stat-val" id="stat-bets">--</div><div class="stat-lbl">Bets Placed</div></div>
   </div>
+
+  <!-- Bot Controls -->
   <div class="card" style="margin-top:12px">
+    <div class="card-title">Bot Controls</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <button class="ctrl-btn" id="btn-running" onclick="toggleBot('running')">⏸ Pause Bot</button>
+      <button class="ctrl-btn" id="btn-betting" onclick="toggleBot('betting')">🚫 Disable Bets</button>
+      <button class="ctrl-btn red-btn" onclick="emergencyStop()">🛑 Emergency Stop</button>
+    </div>
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Stake (UGX)</div>
+        <input id="stake-input" type="number" value="50" min="10" max="10000"
+               style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:8px;width:90px;font-size:14px">
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Min Confidence</div>
+        <select id="conf-select" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:8px;font-size:13px">
+          <option value="HIGH">HIGH only</option>
+          <option value="MEDIUM">MEDIUM+</option>
+        </select>
+      </div>
+      <button class="refresh-btn" style="margin-top:16px;flex:1;min-width:100px" onclick="applyConfig()">✓ Apply</button>
+    </div>
+    <div style="margin-top:10px;font-size:12px;color:var(--muted)" id="bot-status">Status: --</div>
+  </div>
+
+  <div class="card">
     <div class="card-title">Bot Activity</div>
     <div id="activity-feed"><div class="empty"><span class="spinner"></span>Loading...</div></div>
   </div>
@@ -275,13 +312,31 @@ function timeAgo(ts) {
 
 async function loadActivity() {
   try {
-    const [status, activity] = await Promise.all([
+    const [status, activity, engine, balance] = await Promise.all([
       fetch('/api/status').then(r=>r.json()),
-      fetch('/api/activity').then(r=>r.json())
+      fetch('/api/activity').then(r=>r.json()),
+      fetch('/api/engine').then(r=>r.json()),
+      fetch('/api/balance').then(r=>r.json()),
     ]);
     document.getElementById('stat-rounds').textContent = status.total_rounds || 0;
     document.getElementById('stat-sources').textContent = Object.keys(status.sources||{}).length;
+    document.getElementById('stat-bets').textContent = engine.bets_placed || 0;
+    const bal = balance?.bandabets?.main;
+    document.getElementById('stat-balance').textContent = bal != null ? bal.toLocaleString() : '--';
     document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+
+    // Update bot controls state
+    const cfg = engine.config || {};
+    const btnR = document.getElementById('btn-running');
+    const btnB = document.getElementById('btn-betting');
+    btnR.textContent = cfg.running ? '⏸ Pause Bot' : '▶ Resume Bot';
+    btnR.className = 'ctrl-btn ' + (cfg.running ? 'active' : 'inactive');
+    btnB.textContent = cfg.betting ? '🚫 Disable Bets' : '✅ Enable Bets';
+    btnB.className = 'ctrl-btn ' + (cfg.betting ? 'active' : 'inactive');
+    document.getElementById('stake-input').value = cfg.stake || 50;
+    document.getElementById('conf-select').value = cfg.min_confidence || 'HIGH';
+    document.getElementById('bot-status').textContent =
+      `Status: ${engine.status||'idle'} · Last round: #${engine.last_round||'--'} · Updated: ${engine.last_updated||'--'}`;
 
     const feed = document.getElementById('activity-feed');
     if (!activity.length) { feed.innerHTML = '<div class="empty">No activity yet</div>'; return; }
@@ -297,6 +352,29 @@ async function loadActivity() {
   } catch(e) {
     document.getElementById('activity-feed').innerHTML = `<div class="empty">Error: ${e.message}</div>`;
   }
+}
+
+async function toggleBot(key) {
+  const engine = await fetch('/api/engine').then(r=>r.json());
+  const cfg = engine.config || {};
+  await fetch('/api/control', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({[key]: !cfg[key]})});
+  loadActivity();
+}
+
+async function emergencyStop() {
+  if (!confirm('Emergency stop — halt all bot activity?')) return;
+  await fetch('/api/control', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({emergency_stop: true})});
+  loadActivity();
+}
+
+async function applyConfig() {
+  const stake = parseInt(document.getElementById('stake-input').value);
+  const conf  = document.getElementById('conf-select').value;
+  await fetch('/api/control', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({stake, min_confidence: conf})});
+  loadActivity();
 }
 
 async function loadPrediction() {
