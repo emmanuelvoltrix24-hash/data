@@ -20,36 +20,83 @@ def get_cookies():
     return load_cookies()
 
 
-# ── Parity rules from analysis ──────────────────────────────────────────────
+# ── Rules — DB-backed with hardcoded fallback ─────────────────────────────────
+
+_db_rules_cache = {'rules': None, 'loaded_at': 0}
+
+def load_db_rules():
+    """Load high-confidence rules from global_rules table, cache for 5 min."""
+    import time
+    if time.time() - _db_rules_cache['loaded_at'] < 300 and _db_rules_cache['rules'] is not None:
+        return _db_rules_cache['rules']
+    try:
+        db_url = os.environ.get('DATABASE_URL')
+        if not db_url:
+            return {}
+        import psycopg
+        from psycopg.rows import dict_row
+        with psycopg.connect(db_url, row_factory=dict_row) as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT target, conditions, lag, precision, hits, total
+                    FROM global_rules
+                    WHERE status='active' AND precision >= 0.82
+                    ORDER BY precision DESC, hits DESC
+                    LIMIT 200
+                """)
+                rules = cur.fetchall()
+        _db_rules_cache['rules'] = rules
+        _db_rules_cache['loaded_at'] = time.time()
+        print(f"[rules] Loaded {len(rules)} rules from DB")
+        return rules
+    except Exception as e:
+        print(f"[rules] DB load failed: {e}")
+        return {}
+
 
 def apply_parity_rules(p5, p6, p7, p10_prev):
-    """
-    Given M5/M6/M7 parity of round N, return prediction for M10 in N+1.
-    Returns dict with: parity_pred, outcome_constraint, confidence, rule
-    """
+    """Apply rules — DB rules first, hardcoded fallback."""
     pat = (p5, p6, p7)
 
+    # Try DB rules for M10 targets matching current pattern
+    db_rules = load_db_rules()
+    if db_rules:
+        import json
+        for r in db_rules:
+            if r['lag'] != 1: continue
+            conds = r['conditions'] if isinstance(r['conditions'], dict) else json.loads(r['conditions'])
+            # Check if M5/M6/M7 parity conditions match
+            match = all(
+                conds.get(f"M{slot}_parity") == val
+                for slot, val in [(5,p5),(6,p6),(7,p7)]
+                if f"M{slot}_parity" in conds
+            )
+            if not match: continue
+            target = r['target']  # e.g. "M10_outcome=W" or "M10_parity=E"
+            if not target.startswith('M10'): continue
+            prec = r['precision']
+            conf = 'HIGH' if prec >= 0.88 else ('MEDIUM' if prec >= 0.82 else 'LOW')
+            if '=W' in target or '=D' in target:
+                outcome = [target.split('=')[1]]
+                return {'parity': None, 'outcome': outcome, 'confidence': conf,
+                        'rule': f"DB: {list(conds.items())} → {target} ({prec:.0%})"}
+            if '_parity=' in target:
+                par = target.split('=')[1]
+                return {'parity': par, 'outcome': None, 'confidence': conf,
+                        'rule': f"DB: {list(conds.items())} → {target} ({prec:.0%})"}
+
+    # Hardcoded fallback
     if pat == ('O','O','O'):
-        # M10 parity ALWAYS flips (4/4), outcome skews W
-        flip = {'E' if p10_prev=='O' else 'O'} if p10_prev else None
+        flip = ('E' if p10_prev=='O' else 'O') if p10_prev else None
         return {'parity': flip, 'outcome': None, 'confidence': 'HIGH', 'rule': 'O,O,O → M10 parity flips'}
-
     if pat == ('E','O','O'):
-        # M10 never loses (7/7)
         return {'parity': None, 'outcome': ['W','D'], 'confidence': 'HIGH', 'rule': 'E,O,O → M10 no loss'}
-
     if pat == ('O','E','E'):
-        # M10 never loses (4/4), parity leans Even
         return {'parity': 'E', 'outcome': ['W','D'], 'confidence': 'HIGH', 'rule': 'O,E,E → M10 no loss, Even'}
-
     if pat == ('O','E','O'):
-        # M10 parity Even 86%
         return {'parity': 'E', 'outcome': None, 'confidence': 'MEDIUM', 'rule': 'O,E,O → M10 Even parity'}
-
     if pat == ('E','E','O'):
-        # M10 parity stays same (84%)
         return {'parity': p10_prev, 'outcome': None, 'confidence': 'MEDIUM', 'rule': 'E,E,O → M10 parity stable'}
-
     if pat == ('E','E','E'):
         return {'parity': None, 'outcome': None, 'confidence': 'LOW', 'rule': 'E,E,E → neutral'}
 
