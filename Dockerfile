@@ -34,8 +34,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libatspi2.0-0 \
     # NSS / crypto (required by Chromium)
     libnss3 \
-    libnssutil3 \
-    libsmime3 \
     libnspr4 \
     # Printing / CUPS
     libcups2 \
