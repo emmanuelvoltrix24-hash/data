@@ -63,5 +63,5 @@ COPY . .
 # Expose the default Railway port
 EXPOSE 8080
 
-# Run the learner first (one-shot), then start the main process
-CMD python run_learner.py && python master.py
+# Start the long-running main process
+CMD ["python", "master.py"]
