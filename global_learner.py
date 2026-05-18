@@ -214,6 +214,11 @@ def build_fvecs(rounds_with_source):
     slot_history = defaultdict(list)
 
     for rd, source in rounds_with_source:
+        # Handle case where rd comes back as tuple or non-dict from DB
+        if isinstance(rd, (list, tuple)):
+            rd = rd[0] if rd else {}
+        if not isinstance(rd, dict):
+            continue
         standings_map = normalize_standings(rd.get('standings', []))
         fv = {}
 

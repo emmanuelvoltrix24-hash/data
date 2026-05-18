@@ -6,6 +6,17 @@ Main thread runs the dashboard API (web process).
 """
 import threading, os, sys, time
 
+# ── Auto-login on startup if cookies missing ──────────────────────────────────
+COOKIES_FILE = os.path.join(os.path.dirname(__file__), 'bandabets_cookies.json')
+if not os.path.exists(COOKIES_FILE):
+    print("No cookies found — running auto-login...", flush=True)
+    try:
+        from auth import ensure_session
+        ensure_session()
+        print("Auto-login complete", flush=True)
+    except Exception as e:
+        print(f"Auto-login failed: {e}", flush=True)
+
 def run(name, fn):
     while True:
         try:
@@ -166,8 +177,8 @@ def start_prediction_engine():
         time.sleep(5)
 
 def start_bongobongo():
-    from bongobongo_collector import main
-    main()
+    from bongobongo_collector import monitor
+    monitor()
 
 def start_betpawa():
     from betpawa_collector import monitor
@@ -178,9 +189,8 @@ def start_bangbet():
     monitor()
 
 def start_bet22():
-    import bet22_collector
-    # find the main loop function
-    bet22_collector.main() if hasattr(bet22_collector, 'main') else bet22_collector.monitor()
+    from bet22_collector import monitor
+    monitor()
 
 def start_learner():
     # inline learner loop to avoid import issues
