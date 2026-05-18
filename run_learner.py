@@ -12,9 +12,9 @@ DB = os.environ['DATABASE_URL']
 def load_source(src, limit=1000):
     with psycopg.connect(DB, row_factory=dict_row) as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT data FROM rounds WHERE source=%s ORDER BY round_id DESC LIMIT %s", (src, limit))
+            cur.execute("SELECT data, source FROM rounds WHERE source=%s ORDER BY round_id DESC LIMIT %s", (src, limit))
             rows = cur.fetchall()
-    return [(r['data'], src) for r in reversed(rows)]
+    return [(r['data'], r['source']) for r in reversed(rows)]
 
 init_tables()
 prev = load_previous_rules()
