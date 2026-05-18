@@ -236,8 +236,19 @@ if __name__ == '__main__':
         t.start()
         print(f"Started: {name}", flush=True)
 
-    # Main thread: run dashboard API
-    from dashboard_api import app
+    # Main thread: run dashboard API with gunicorn if available, else Flask dev
     port = int(os.environ.get('PORT', 8080))
     print(f"Dashboard on port {port}", flush=True)
-    app.run(host='0.0.0.0', port=port)
+    try:
+        import gunicorn.app.base
+        from dashboard_api import app
+        class StandaloneApp(gunicorn.app.base.BaseApplication):
+            def load_config(self):
+                self.cfg.set('bind', f'0.0.0.0:{port}')
+                self.cfg.set('workers', 1)
+                self.cfg.set('timeout', 120)
+            def load(self): return app
+        StandaloneApp().run()
+    except ImportError:
+        from dashboard_api import app
+        app.run(host='0.0.0.0', port=port)
