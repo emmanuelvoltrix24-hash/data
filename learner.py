@@ -14,11 +14,16 @@ VFL Pattern Learner v2
 - EV ranking: precision × hits
 - Output grouped by target slot
 """
-import os, json, time, itertools
+import os, json, time, itertools, logging
 from collections import Counter, defaultdict
 from datetime import datetime
 import psycopg
 from psycopg.rows import dict_row
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+)
 
 DATABASE_URL = os.environ['DATABASE_URL']
 MIN_ROUNDS   = 30
@@ -69,7 +74,16 @@ def load_rounds():
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT data FROM rounds ORDER BY round_id ASC")
-            return [r['data'] for r in cur.fetchall()]
+            rows = cur.fetchall()
+            rounds = [r['data'] for r in rows]
+            # Diagnostic: log the type of the first few rounds so we can
+            # confirm whether JSONB is deserialised as dict or something else.
+            for i, rd in enumerate(rounds[:3]):
+                logging.info(
+                    "load_rounds: rounds[%d] type=%s, is_dict=%s",
+                    i, type(rd).__name__, isinstance(rd, dict),
+                )
+            return rounds
 
 
 def load_previous_rules():
@@ -312,7 +326,38 @@ def build_fvecs(rounds):
     season_round_counter = defaultdict(int)  # season_id -> round count within season
     h2h = defaultdict(list)  # (home, away) -> list of outcomes
 
-    for rd in rounds:
+    for idx, rd in enumerate(rounds):
+        # Guard: rd must be a dict (JSONB from DB). If it's a tuple the row
+        # factory didn't deserialise it — log the type and attempt recovery.
+        if not isinstance(rd, dict):
+            logging.warning(
+                "build_fvecs: round[%d] has unexpected type %s (expected dict). "
+                "Raw value (first 200 chars): %.200r",
+                idx, type(rd).__name__, rd,
+            )
+            # Attempt 1: tuple of (key, value) pairs → dict
+            if isinstance(rd, (tuple, list)):
+                try:
+                    rd = dict(rd)
+                    logging.info("build_fvecs: round[%d] successfully coerced tuple→dict", idx)
+                except (TypeError, ValueError):
+                    pass
+            # Attempt 2: JSON string stored instead of JSONB object
+            if not isinstance(rd, dict) and isinstance(rd, str):
+                try:
+                    rd = json.loads(rd)
+                    logging.info("build_fvecs: round[%d] successfully parsed JSON string→dict", idx)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            # Still not a dict — skip this round entirely
+            if not isinstance(rd, dict):
+                logging.error(
+                    "build_fvecs: round[%d] could not be converted to dict; skipping. "
+                    "This round will NOT contribute to rule mining.",
+                    idx,
+                )
+                continue
+
         standings_map = {s['team_name']: s for s in rd.get('standings', [])}
         fv = {}
         season_id = rd.get('season_id')
