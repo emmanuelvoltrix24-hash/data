@@ -1,31 +1,8 @@
 [phases.setup]
-nixPkgs = [
-  "python311",
-  "chromium",
-  "nss",
-  "nspr",
-  "glib",
-  "xorg.libX11",
-  "xorg.libXcomposite",
-  "xorg.libXdamage",
-  "xorg.libXext",
-  "xorg.libXfixes",
-  "xorg.libXrandr",
-  "xorg.libxcb",
-  "xorg.libXcursor",
-  "xorg.libXi",
-  "xorg.libXrender",
-  "xorg.libXtst",
-  "cairo",
-  "pango",
-  "atk",
-  "cups",
-  "dbus",
-  "expat",
-  "fontconfig",
-  "freetype",
-  "libdrm",
-  "mesa",
-  "alsa-lib",
-  "xvfb-run",
-]
+nixPkgs = ["python312"]
+
+[phases.install]
+cmds = ["pip install -r requirements.txt"]
+
+[start]
+cmd = "python railway_runner.py"

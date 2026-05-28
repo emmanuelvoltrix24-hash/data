@@ -1,227 +1,200 @@
 #!/usr/bin/env python3
 """
-BangBet Virtual Football Collector - Timer-Sync Edition
-1. Fetches active tournaments.
-2. Fetches match schedule (MatchDayList) for each.
-3. Polls results (FinishedList) exactly when rounds conclude.
+BangBet VFL Collector — results only, polls finished matches.
+No odds available. Has period scores (HT/FT). Team names are real.
 """
-import requests
-import json
-import time
-import os
-import logging
-import random
+import requests, json, time, os, glob
 from datetime import datetime, timezone
 
-logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s %(message)s", datefmt="%H:%M:%S")
-log = logging.getLogger(__name__)
+HEADERS = {
+    'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36',
+    'accept': 'application/json, text/plain, */*',
+    'content-type': 'application/json',
+    'referer': 'https://www.bangbet.com/virtuals/',
+    'origin': 'https://www.bangbet.com',
+}
 
-# Endpoints
-BASE_URL = "https://bet-api.bangbet.com/api/bet"
-TOURNAMENT_URL = f"{BASE_URL}/virtualArea/tournamentList?country=ug&producer=6&sportId=sr:sport:1"
-MATCHDAY_URL = f"{BASE_URL}/virtual/match/matchDayList"
-RESULTS_URL = f"{BASE_URL}/virtual/match/finished/list"
+BASE = 'https://bet-api.bangbet.com/api/bet'
+TOURNAMENT_URL = f'{BASE}/virtualArea/tournamentList?country=ug&producer=6&sportId=sr:sport:1'
+MATCHDAY_URL = f'{BASE}/virtual/match/matchDayList'
+RESULTS_URL = f'{BASE}/virtual/match/finished/list'
+MATCH_LIST_URL = f'{BASE}/virtual/match/list'
 
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-]
-
-SAVE_DIR = "/home/voltrix/bangbet_vfl_data"
+SAVE_DIR = '/home/voltrix/vfl_data'
 os.makedirs(SAVE_DIR, exist_ok=True)
 
-class BangBetSession:
-    def __init__(self):
-        self.session = requests.Session()
-        self.update_headers()
+_seen_keys = set()
 
-    def update_headers(self):
-        self.session.headers.update({
-            "user-agent": random.choice(USER_AGENTS),
-            "accept": "application/json, text/plain, */*",
-            "content-type": "application/json",
-            "referer": "https://www.bangbet.com/virtuals/",
-            "origin": "https://www.bangbet.com"
-        })
-
-    def request(self, method, url, payload=None):
+def fetch(url, payload=None):
+    for _ in range(3):
         try:
-            time.sleep(random.uniform(0.5, 1.5))
-            if method == "POST":
-                r = self.session.post(url, json=payload, timeout=15)
+            if payload:
+                r = requests.post(url, json=payload, headers=HEADERS, timeout=10)
             else:
-                r = self.session.get(url, timeout=15)
+                r = requests.get(url, headers=HEADERS, timeout=10)
             r.raise_for_status()
             return r.json()
-        except Exception as e:
-            log.warning("Request failed (%s): %s", url, e)
-            return None
-
-def _empty_row():
-    return {"played": 0, "w": 0, "d": 0, "l": 0, "gf": 0, "ga": 0, "gd": 0, "pts": 0}
-
+        except:
+            time.sleep(2)
+    return None
 
 def compute_standings(tournament_name):
+    """Compute standings from all saved bangbet rounds for a tournament."""
     table = {}
-    for fn in sorted(os.listdir(SAVE_DIR)):
-        if not fn.endswith(".json") or fn == "latest_standings.json":
-            continue
+    for fn in glob.glob(f'{SAVE_DIR}/bangbet_*.json'):
         try:
-            with open(os.path.join(SAVE_DIR, fn)) as f:
+            with open(fn) as f:
                 d = json.load(f)
-        except Exception:
+        except:
             continue
-        if d.get("tournament") != tournament_name:
+        if d.get('tournament') != tournament_name:
             continue
-        for m in d.get("matches", []):
-            score = m.get("score", "")
-            if ":" not in score:
-                continue
-            hg, ag = int(score.split(":")[0]), int(score.split(":")[1])
-            for team in (m["home"], m["away"]):
-                table.setdefault(team, _empty_row())
-            h, a = table[m["home"]], table[m["away"]]
-            h["played"] += 1; a["played"] += 1
-            h["gf"] += hg; h["ga"] += ag
-            a["gf"] += ag; a["ga"] += hg
-            if hg > ag:
-                h["w"] += 1; h["pts"] += 3; a["l"] += 1
-            elif hg < ag:
-                a["w"] += 1; a["pts"] += 3; h["l"] += 1
-            else:
-                h["d"] += 1; a["d"] += 1; h["pts"] += 1; a["pts"] += 1
-    for row in table.values():
-        row["gd"] = row["gf"] - row["ga"]
-    ranked = sorted(table.items(), key=lambda x: (-x[1]["pts"], -x[1]["gd"], -x[1]["gf"]))
-    return [{"pos": i + 1, "team": t, **r} for i, (t, r) in enumerate(ranked)]
+        for m in d.get('matches', []):
+            score = m.get('score', '')
+            if ':' not in score: continue
+            hg, ag = map(int, score.split(':'))
+            for team, gf, ga in [(m['home'], hg, ag), (m['away'], ag, hg)]:
+                row = table.setdefault(team, {'played':0,'w':0,'d':0,'l':0,'gf':0,'ga':0,'pts':0})
+                row['played'] += 1
+                row['gf'] += gf; row['ga'] += ga
+                if gf > ga: row['w']+=1; row['pts']+=3
+                elif gf == ga: row['d']+=1; row['pts']+=1
+                else: row['l']+=1
+    ranked = sorted(table.items(), key=lambda x: (-x[1]['pts'], -(x[1]['gf']-x[1]['ga']), -x[1]['gf']))
+    return [{'pos':i+1,'team':t,'gd':r['gf']-r['ga'],**r} for i,(t,r) in enumerate(ranked)]
 
+def print_match(m, i=1):
+    ht = m.get('periods', [{}])[0] if m.get('periods') else {}
+    ht_s = f"{ht.get('homeScore','?')}:{ht.get('awayScore','?')}" if ht else '-:-'
+    score = m.get('score', '?:?')
+    hm = '🔵' if ':' in score and int(score.split(':')[0]) > int(score.split(':')[1]) else ('🟡' if score.split(':')[0]==score.split(':')[1] else '🔴')
+    print(f"  {i:>2}. {hm} {m['home']:<20} {score:<6} {m['away']:<20} HT={ht_s}", flush=True)
 
-def save_standings(tournament_name):
-    rows = compute_standings(tournament_name)
-    if not rows:
-        return
-    with open(f"{SAVE_DIR}/latest_standings.json", "w") as f:
-        json.dump(rows, f, indent=2)
-
-
-def display_standings(tournament_name):
-    rows = compute_standings(tournament_name)
-    if not rows:
-        return
-    print(f"\n  STANDINGS — {tournament_name}")
-    print(f"  {'#':<4} {'Team':<25} {'P':>3} {'W':>3} {'D':>3} {'L':>3} {'GF':>4} {'GA':>4} {'GD':>4} {'Pts':>4}")
-    print(f"  {'-' * 65}")
-    for r in rows:
-        print(f"  {r['pos']:<4} {r['team']:<25} {r['played']:>3} {r['w']:>3} {r['d']:>3} {r['l']:>3} {r['gf']:>4} {r['ga']:>4} {r['gd']:>4} {r['pts']:>4}")
-    print()
-
-
-def display_results(data):
-    ts = data.get("timestamp", "Unknown")
-    tournament = data.get("tournament", "Unknown")
-    log.info("BANGBET | %s | %s", tournament, ts)
-    header = f"  {'Home':<25} | {'Away':<25} | {'Score':^10} | {'HT':^7}"
-    print("\n" + header + "\n  " + "-" * len(header))
-    for m in data["matches"]:
-        ht = m["periods"][0] if m.get("periods") else {}
-        ht_score = f"{ht.get('homeScore')}:{ht.get('awayScore')}" if ht else "-:-"
-        print(f"  {m['home']:<25} | {m['away']:<25} | {m['score']:^10} | {ht_score:^7}")
-    print("  " + "=" * len(header) + "\n")
-
-def monitor():
-    api = BangBetSession()
-    processed_keys = set()
-    log.info("BangBet Timer-Sync Collector started.")
+def collect():
+    print(f"[bangbet] Starting — polling tournaments...", flush=True)
 
     while True:
         try:
-            # 1. Get Tournament List
-            t_data = api.request("GET", TOURNAMENT_URL)
-            if not t_data or not t_data.get("data"):
+            t_data = fetch(TOURNAMENT_URL)
+            if not t_data or not t_data.get('data'):
                 time.sleep(30); continue
-            
-            tournaments = t_data["data"]
-            
-            for t in tournaments:
-                t_id = t["tournamentId"]
-                t_name = t["tournamentName"]
-                
-                # 2. Get Match Day List (The Timer)
-                md_payload = {"producer": 6, "tournamentId": t_id, "country": "ug"}
-                md_data = api.request("POST", MATCHDAY_URL, md_payload)
-                if not md_data or not md_data.get("data"): continue
-                
-                standings_dirty = False
 
-                # 3. Process each round in the schedule
-                for round_info in md_data["data"]:
-                    st = round_info["scheduleDate"]
+            for t in t_data['data']:
+                t_id = t.get('tournamentId', t.get('id'))
+                t_name = t.get('tournamentName', t.get('name', '?'))
+                if not t_id: continue
+
+                # Get schedule
+                md = fetch(MATCHDAY_URL, {'producer': 6, 'tournamentId': t_id, 'country': 'ug'})
+                if not md or not md.get('data'): continue
+
+                for rd in md['data']:
+                    st = rd.get('scheduleDate')
                     key = f"{t_id}_{st}"
-                    
-                    if key in processed_keys: continue
-                    
-                    if round_info["status"] == 2:
-                        res_payload = {
-                            "country": "ug",
-                            "tournamentId": t_id,
-                            "producer": 6,
-                            "sportId": "sr:sport:1",
-                            "betradarId": round_info["betradarId"],
-                            "number": round_info["number"],
-                            "seasonId": round_info["seasonId"],
-                            "scheduleDate": st
-                        }
-                        
-                        res_data = api.request("POST", RESULTS_URL, res_payload)
-                        if res_data and res_data.get("data"):
-                            matches = []
-                            for m in res_data["data"]:
-                                matches.append({
-                                    "home": m["homeTeamName"],
-                                    "away": m["awayTeamName"],
-                                    "score": f"{m['homeScore']}:{m['awayScore']}",
-                                    "periods": m.get("periodScoreList", [])
-                                })
-                            
-                            round_result = {
-                                "tournament": t_name,
-                                "tournamentId": t_id,
-                                "scheduleTime": st,
-                                "timestamp": datetime.fromtimestamp(st/1000, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S'),
-                                "matches": matches
-                            }
-                            
-                            display_results(round_result)
+                    if key in _seen_keys: continue
+                    if rd.get('status') != 2: continue  # 2 = finished
 
-                            fn = f"{SAVE_DIR}/{t_name.replace(' ', '_')}_{st}.json"
-                            with open(fn, "w") as f: json.dump(round_result, f, indent=2)
+                    # Fetch results
+                    res = fetch(RESULTS_URL, {
+                        'country': 'ug', 'tournamentId': t_id, 'producer': 6,
+                        'sportId': 'sr:sport:1', 'betradarId': rd.get('betradarId'),
+                        'number': rd.get('number'), 'seasonId': rd.get('seasonId'),
+                        'scheduleDate': st,
+                    })
 
-                            # Write to unified DB
-                            try:
-                                from db import save_round as db_save_round
-                                db_matches = [{'n': i+1, 'home': m['home'], 'away': m['away'],
-                                               'hg': int(m['score'].split(':')[0]),
-                                               'ag': int(m['score'].split(':')[1]),
-                                               'result': m['score']} for i, m in enumerate(matches)]
-                                db_save_round(str(st), 'bangbet', t_name, db_matches)
-                            except Exception as e:
-                                log.warning("DB write error: %s", e)
+                    if not res or not res.get('data'): continue
 
-                            processed_keys.add(key)
-                            standings_dirty = True
+                    _seen_keys.add(key)
+                    matches = []
+                    for m in res['data']:
+                        matches.append({
+                            'home': m['homeTeamName'],
+                            'away': m['awayTeamName'],
+                            'score': f"{m['homeScore']}:{m['awayScore']}",
+                            'hg': m['homeScore'], 'ag': m['awayScore'],
+                            'periods': m.get('periodScoreList', []),
+                        })
 
-                if standings_dirty:
-                    save_standings(t_name)
-                    display_standings(t_name)
+                    ts = datetime.fromtimestamp(st/1000, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+                    round_data = {
+                        'tournament': t_name,
+                        'tournament_id': t_id,
+                        'schedule_time': st,
+                        'timestamp': ts,
+                        'collected_at': datetime.now().isoformat(),
+                        'source': 'bangbet',
+                        'matches': matches,
+                    }
 
-            # Cleanup processed_keys to prevent memory leak
-            if len(processed_keys) > 5000: processed_keys.clear()
+                    # Compute standings
+                    standings = compute_standings(t_name)
+                    # Add this round's data temporarily for standings display
+                    temp_table = {}
+                    for m in matches:
+                        hg, ag = m['hg'], m['ag']
+                        for team, gf, ga in [(m['home'], hg, ag), (m['away'], ag, hg)]:
+                            row = temp_table.setdefault(team, {'played':0,'w':0,'d':0,'l':0,'gf':0,'ga':0,'pts':0})
+                            row['played'] += 1; row['gf'] += gf; row['ga'] += ga
+                            if gf > ga: row['w']+=1; row['pts']+=3
+                            elif gf == ga: row['d']+=1; row['pts']+=1
+                            else: row['l']+=1
+                    temp_ranked = sorted(temp_table.items(), key=lambda x: (-x[1]['pts'], -(x[1]['gf']-x[1]['ga']), -x[1]['gf']))
+                    temp_standings = [{'pos':i+1,'team':t,'gd':r['gf']-r['ga'],**r} for i,(t,r) in enumerate(temp_ranked)]
+
+                    # Save
+                    fn = f'{SAVE_DIR}/bangbet_{t_name.replace(" ", "_")}_{st}.json'
+                    with open(fn, 'w') as f:
+                        json.dump(round_data, f, indent=2)
+
+                    # Write to unified DB
+                    try:
+                        from db_writer import save_bangbet_round
+                        save_bangbet_round(st, t_name, tournament_id=t_id,
+                                           timestamp=ts, matches=matches, standings=standings)
+                    except Exception as e:
+                        print(f"  [db] DB write skipped: {e}", flush=True)
+
+                    # Also try to get odds from match/list
+                    try:
+                        ml = fetch(MATCH_LIST_URL, {
+                            'producer': 6, 'sportId': 'sr:sport:1',
+                            'tournamentId': t_id, 'country': 'ug',
+                        })
+                        if ml and ml.get('data', {}).get('data'):
+                            odds_data = ml['data']['data']
+                            odds_fn = fn.replace('.json', '_odds.json')
+                            with open(odds_fn, 'w') as f:
+                                json.dump({'tournament': t_name, 'schedule_time': st,
+                                           'matches_with_odds': odds_data, 'source': 'bangbet'}, f, indent=2)
+                            print(f"  → odds saved: {odds_fn}", flush=True)
+                    except:
+                        pass
+
+                    # Print
+                    print(f"\n{'='*67}", flush=True)
+                    print(f"  [bangbet] ✅ {t_name} — {len(matches)} matches @ {ts}", flush=True)
+                    print(f"{'='*67}", flush=True)
+                    for i, m in enumerate(matches, 1):
+                        print_match(m, i)
+
+                    if standings:
+                        print(f"\n  🏆 {t_name} Standings (all-time):", flush=True)
+                        print(f"  {'POS':<4} {'TEAM':<20} {'PTS':<5} {'W':<4}{'D':<4}{'L':<4} {'GF':<4}{'GA':<4}{'GD':<5}", flush=True)
+                        print(f"  {'-'*55}", flush=True)
+                        for s in standings[:8]:
+                            icon = '🥇' if s['pos']==1 else ('🥈' if s['pos']==2 else ('🥉' if s['pos']==3 else '  '))
+                            print(f"  {icon} {s['pos']:<3} {s['team']:<20} {s['pts']:<5} {s['w']:<4}{s['d']:<4}{s['l']:<4} {s['gf']:<4}{s['ga']:<4}{s['gd']:<5}", flush=True)
+
+                    print(f"  → saved: {fn}", flush=True)
+                    print(flush=True)
+
+            time.sleep(30)
 
         except Exception as e:
-            log.error("Monitor loop error: %s", e)
-        
-        # Wait a bit before next schedule check
-        time.sleep(60)
+            print(f"[bangbet] Error: {e}", flush=True)
+            import traceback; traceback.print_exc()
+            time.sleep(30)
 
-if __name__ == "__main__":
-    monitor()
+
+if __name__ == '__main__':
+    collect()

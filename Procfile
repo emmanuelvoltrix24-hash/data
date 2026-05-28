@@ -1,1 +1,3 @@
-web: python -m playwright install chromium && python run_learner.py && python master.py
+# ── Railway Procfile ─────────────────────────────────────────────
+# Runs all 5 collectors + Flask health endpoint on a single dyno
+web: python railway_runner.py
