@@ -44,6 +44,19 @@ tr:hover { background: #1a2d3d; }
 .badge-LOW { background: #ff6d0020; color: #ff6d00; border: 1px solid #ff6d0040; }
 .badge-true,.badge-correct { background: #00c85320; color: #00c853; border: 1px solid #00c85340; }
 .badge-false,.badge-wrong { background: #ff174420; color: #ff1744; border: 1px solid #ff174440; }
+.badge-parity { background: #2979ff20; color: #2979ff; border: 1px solid #2979ff40; }
+.badge-cs { background: #00c85320; color: #00c853; border: 1px solid #00c85340; }
+.badge-ht_parity { background: #ff6d0020; color: #ff6d00; border: 1px solid #ff6d0040; }
+.badge-ht_outcome { background: #d500f920; color: #d500f9; border: 1px solid #d500f940; }
+.badge-total_parity { background: #00e5ff20; color: #00e5ff; border: 1px solid #00e5ff40; }
+.badge-both_score { background: #76ff0320; color: #76ff03; border: 1px solid #76ff0340; }
+.badge-both_late { background: #ffea0020; color: #ffea00; border: 1px solid #ffea0040; }
+.badge-outcome { background: #ff174420; color: #ff1744; border: 1px solid #ff174440; }
+.badge-odds_fav { background: #e040fb20; color: #e040fb; border: 1px solid #e040fb40; }
+.badge-any_late { background: #00bcd420; color: #00bcd4; border: 1px solid #00bcd440; }
+.badge-ht_cs { background: #8bc34a20; color: #8bc34a; border: 1px solid #8bc34a40; }
+.badge-gg_yes { background: #ff572220; color: #ff5722; border: 1px solid #ff572240; }
+.badge-tg25_o { background: #79554820; color: #795548; border: 1px solid #79554840; }
 
 .nav { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
 .nav a { color: #e0e6ed; text-decoration: none; padding: 8px 18px; border-radius: 6px; border: 1px solid #2a3d4d; cursor: pointer; font-size: 0.9em; }
@@ -85,6 +98,19 @@ tr:hover { background: #1a2d3d; }
     <div class="conf-btn" data-conf="HIGH">HIGH</div>
     <div class="conf-btn" data-conf="MEDIUM">MEDIUM</div>
     <div class="conf-btn" data-conf="LOW">LOW</div>
+    <select id="market-filter" style="background:#1a2d3d;border:1px solid #2a3d4d;color:#e0e6ed;padding:4px 10px;border-radius:4px;font-size:0.85em">
+      <option value="all">All Markets</option>
+      <option value="parity">Parity</option>
+      <option value="cs">CS</option>
+      <option value="ht_parity">HT Parity</option>
+      <option value="ht_outcome">HT Outcome</option>
+      <option value="total_parity">Total Parity</option>
+      <option value="both_score">Both Score</option>
+      <option value="both_late">Both Late</option>
+      <option value="outcome">Outcome</option>
+      <option value="odds_fav">Odds Fav</option>
+      <option value="any_late">Any Late</option>
+    </select>
     <input class="search-input" id="pred-search" placeholder="Search slot or target...">
     <span id="pred-count" style="color:#667788;font-size:0.8em"></span>
   </div>
@@ -157,6 +183,7 @@ document.querySelectorAll('.conf-btn').forEach(b => {
   });
 });
 document.getElementById('pred-search').addEventListener('input', loadPredictions);
+document.getElementById('market-filter').addEventListener('change', loadPredictions);
 document.getElementById('rules-search').addEventListener('input', loadRules);
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -187,9 +214,11 @@ async function loadPredictions() {
   const d = await api(API + '/api/predictions');
   if (d.error) return;
   const search = (document.getElementById('pred-search').value || '').toLowerCase();
+  const marketFilter = document.getElementById('market-filter').value;
   let list = d.predictions || [];
   if (activeConf !== 'all') list = list.filter(p => p.confidence === activeConf);
-  if (search) list = list.filter(p => p.slot.toLowerCase().includes(search) || p.target.toLowerCase().includes(search) || p.source.includes(search));
+  if (marketFilter !== 'all') list = list.filter(p => p.pred_type === marketFilter);
+  if (search) list = list.filter(p => p.slot.toLowerCase().includes(search) || p.target.toLowerCase().includes(search) || p.source.includes(search) || (p.pred_type || '').includes(search));
 
   document.getElementById('pred-count').textContent = list.length + ' predictions';
 
@@ -209,13 +238,21 @@ async function loadPredictions() {
     // Count conf levels
     const hi = items.filter(p => p.confidence === 'HIGH').length;
     const med = items.filter(p => p.confidence === 'MEDIUM').length;
+    
+    // Count market types
+    const types = {};
+    items.forEach(p => { const t = p.pred_type || '?'; types[t] = (types[t] || 0) + 1; });
+    const typeSummary = Object.entries(types).sort((a,b) => b[1]-a[1]).map(([t,c]) => `${badge(t,c)}`).join(' ');
 
     html += `<div class="source-section source-${src}">
       <div class="source-header" onclick="toggleSource(this)">
         <span class="arrow">▼</span>
         ${dot(src)}
         <span class="source-name">${src}</span>
-        <span class="source-meta">${items.length} predictions  ${hi ? '• ' + badge('HIGH', hi) : ''}  ${med ? '• ' + badge('MEDIUM', med) : ''}</span>
+        <span class="source-meta">${items.length} predictions</span>
+      </div>
+      <div style="padding:6px 16px;font-size:0.75em;border-bottom:1px solid #1a2d3d;color:#667788">
+        ${typeSummary}
       </div>
       <div class="source-body">
         <div class="source-table-wrap">
@@ -230,7 +267,7 @@ async function loadPredictions() {
         ${cell(p.round_id)}
         ${cell(p.slot)}
         ${cell(p.target)}
-        ${cell(p.pred_type)}
+        ${cell(badge(p.pred_type || '?'))}
         ${cell(p.pred_val)}
         ${cell(pct(p.precision))}
         ${cell(p.hits)}
