@@ -21,6 +21,12 @@ PARAMS = {'champs': '88637', 'count': '50', 'lng': 'en_GB', 'tf': '3000000',
 SAVE_DIR = '/home/voltrix/vfl_data'
 os.makedirs(SAVE_DIR, exist_ok=True)
 
+# Postgres writer (optional)
+try:
+    from db import save_round as pg_save_round
+except Exception:
+    def pg_save_round(*a, **kw): pass
+
 _seen_rounds = set()
 
 def fetch():
@@ -137,12 +143,26 @@ def collect():
                         'matches': matches
                     }, f, indent=2)
 
-                # Write to unified DB
+                # Write to SQLite (legacy)
                 try:
                     from db_writer import save_bet22_round
                     save_bet22_round(lid, league=league, matches=matches)
                 except Exception as e:
-                    print(f"  [db] DB write skipped: {e}", flush=True)
+                    print(f"  [sqldb] DB write skipped: {e}", flush=True)
+
+                # Write to Postgres (unified)
+                try:
+                    pg_matches = []
+                    for i, m in enumerate(matches, 1):
+                        od = m.get('odds', {}).get('1x2', {})
+                        pg_matches.append({
+                            'n': i, 'home': m['home_team'], 'away': m['away_team'],
+                            'hg': None, 'ag': None, 'result': None,
+                            'odds': {'1x2': od},
+                        })
+                    pg_save_round(str(lid), '22bet', league, pg_matches)
+                except Exception as e:
+                    print(f"  [pg] write skipped: {e}", flush=True)
 
                 # Print
                 print(f"\n{'='*60}", flush=True)

@@ -12,7 +12,7 @@ from datetime import datetime
 import psycopg
 from psycopg.rows import dict_row
 
-DATABASE_URL = os.environ['DATABASE_URL']
+DATABASE_URL = os.environ.get('DATABASE_URL', '')
 MIN_ROUNDS   = 30
 RUN_EVERY    = 300
 
@@ -120,22 +120,70 @@ def normalize_match(m, source):
     except: h_odd = d_odd = a_odd = None
 
     t = hg + ag
+    
+    # HT score
+    ht_str = m.get('ht')
+    ht_parity, ht_outcome = None, None
+    if ht_str and ':' in str(ht_str):
+        try:
+            parts = str(ht_str).split(':')
+            ht_hg, ht_ag = int(parts[0]), int(parts[1])
+            ht_t = ht_hg + ht_ag
+            ht_parity = None if ht_t == 0 else ('E' if ht_t % 2 == 0 else 'O')
+            ht_outcome = 'W' if ht_hg > ht_ag else ('L' if ht_hg < ht_ag else 'D')
+        except: pass
+    
+    # Goal timing
+    home_score_times = m.get('home_score_times') or m.get('homeGoals') or []
+    away_score_times = m.get('away_score_times') or m.get('awayGoals') or []
+    h_late = sum(1 for t in home_score_times if isinstance(t,(int,float)) and t > 60) if isinstance(home_score_times, list) else 0
+    a_late = sum(1 for t in away_score_times if isinstance(t,(int,float)) and t > 60) if isinstance(away_score_times, list) else 0
+    
+    # Extract GG odds (GG, Both Teams To Score)
+    gg_yes = None
+    gg_raw = odds_raw.get('GG', [])
+    if isinstance(gg_raw, list):
+        for o in gg_raw:
+            if isinstance(o, dict) and o.get('outcome_id') in ('Y','Yes'):
+                try: gg_yes = float(o['odd_value'])
+                except: pass
+
+    # Extract O/U 2.5
+    tg25_o = None
+    for market_key in ('TG25', 'OV/UN 2.5', 'Total Score Over/Under - FT'):
+        tg_raw = odds_raw.get(market_key, [])
+        if isinstance(tg_raw, list):
+            for o in tg_raw:
+                if isinstance(o, dict):
+                    name = o.get('outcome_name','').lower()
+                    oid = o.get('outcome_id','').lower()
+                    if 'over' in name or oid == 'o':
+                        try: tg25_o = float(o['odd_value'])
+                        except: pass
+    
     return {
-        'n':       m.get('n', 0),
-        'home':    home,
-        'away':    away,
-        'hg':      hg,
-        'ag':      ag,
-        'total':   t,
-        'parity':  None if t == 0 else ('E' if t % 2 == 0 else 'O'),
-        'outcome': 'W' if hg > ag else ('L' if hg < ag else 'D'),
-        'cs':      hg == 0 or ag == 0,
-        'both_score': hg > 0 and ag > 0,
-        'margin':  abs(hg - ag),
-        'h_odd':   h_odd,
-        'd_odd':   d_odd,
-        'a_odd':   a_odd,
-        'source':  source,
+        'n':             m.get('n', 0),
+        'home':          home,
+        'away':          away,
+        'hg':            hg,
+        'ag':            ag,
+        'total':         t,
+        'parity':        None if t == 0 else ('E' if t % 2 == 0 else 'O'),
+        'outcome':       'W' if hg > ag else ('L' if hg < ag else 'D'),
+        'cs':            hg == 0 or ag == 0,
+        'both_score':    hg > 0 and ag > 0,
+        'margin':        abs(hg - ag),
+        'h_odd':         h_odd,
+        'd_odd':         d_odd,
+        'a_odd':         a_odd,
+        'gg_yes':        gg_yes,
+        'tg25_o':        tg25_o,
+        'ht_parity':     ht_parity,
+        'ht_outcome':    ht_outcome,
+        'h_late_goals':  h_late,
+        'a_late_goals':  a_late,
+        'any_late':      h_late > 0 or a_late > 0,
+        'source':        source,
     }
 
 
@@ -170,7 +218,7 @@ def prob_bucket(odd):
 
 def discretize(val, key):
     if val is None: return None
-    if key in ('h_odd','d_odd','a_odd'):
+    if key in ('h_odd','d_odd','a_odd','gg_yes','tg25_o'):
         if val < 1.5: return 'vlow'
         if val < 2.0: return 'low'
         if val < 2.5: return 'med'
@@ -247,6 +295,12 @@ def build_fvecs(rounds_with_source):
                 'form_diff': form_score(h_form) - form_score(a_form),
                 'h_trend':   'up' if form_trend(h_form)>0 else ('down' if form_trend(h_form)<0 else 'flat'),
                 'a_trend':   'up' if form_trend(a_form)>0 else ('down' if form_trend(a_form)<0 else 'flat'),
+                'gg_yes':    m.get('gg_yes'),
+                'tg25_o':    m.get('tg25_o'),
+                'ht_parity': m.get('ht_parity'),
+                'ht_outcome':m.get('ht_outcome'),
+                'both_late': m.get('any_late') and m.get('h_late_goals',0) > 0 and m.get('a_late_goals',0) > 0,
+                'any_late':  m.get('any_late', False),
             }
             if m['h_odd'] and m['d_odd'] and m['a_odd']:
                 if m['h_odd'] < m['a_odd'] and m['h_odd'] < m['d_odd']: feats['odds_fav'] = 'H'

@@ -24,6 +24,12 @@ TEAMS = {
 SAVE_DIR = '/home/voltrix/vfl_data'
 os.makedirs(SAVE_DIR, exist_ok=True)
 
+# Postgres writer (optional — fails silently if DATABASE_URL not set)
+try:
+    from db import save_round as pg_save_round
+except Exception:
+    def pg_save_round(*a, **kw): pass
+
 seen_matchdays = set()
 
 def parse(xml_text):
@@ -169,14 +175,26 @@ def save_to_json(upcoming, results, standings):
         with open(fn, 'w') as f:
             json.dump({'type': 'results', 'data': results, 'standings': standings, 'collected_at': datetime.now().isoformat()}, f, indent=2)
 
-        # Write to unified DB
+        # Write to SQLite (legacy)
         try:
             from db_writer import save_bongobongo_round
             week = int(results['week']) if results.get('week') else None
             season = int(results['season']) if results.get('season') else None
             save_bongobongo_round(mid, week=week, season=season, matches=results['matches'], standings=standings)
         except Exception as e:
-            print(f"  [db] DB write skipped: {e}", flush=True)
+            print(f"  [sqldb] DB write skipped: {e}", flush=True)
+
+        # Write to Postgres (unified)
+        try:
+            pg_matches = [{'n': m['n'], 'home': m['home'], 'away': m['away'],
+                           'hg': m['hg'], 'ag': m['ag'], 'result': m['score'],
+                           'outcome': m['outcome'], 'parity': m['parity']} for m in results['matches']]
+            pg_standings = [{'pos': s['pos'], 'team': s['team'], 'points': s['points'],
+                             'played': s['played'], 'w': s['w'], 'd': s['d'], 'l': s['l'],
+                             'gf': s['gf'], 'ga': s['ga'], 'gd': s['gd']} for s in standings]
+            pg_save_round(str(mid), 'bongobongo', 'English', pg_matches, pg_standings)
+        except Exception as e:
+            print(f"  [pg] write skipped: {e}", flush=True)
 
         return fn
     return None

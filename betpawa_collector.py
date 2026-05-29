@@ -21,6 +21,12 @@ EVENTS_URL = f'{BASE}/v2/events/list/by-round/{{round_id}}?page=upcoming'
 SAVE_DIR = '/home/voltrix/vfl_data'
 os.makedirs(SAVE_DIR, exist_ok=True)
 
+# Postgres writer (optional)
+try:
+    from db import save_round as pg_save_round
+except Exception:
+    def pg_save_round(*a, **kw): pass
+
 LEAGUE_IDS = {
     '7794': 'English League', '7795': 'Spanish League', '7796': 'Italian League',
     '9183': 'French League', '9184': 'German League', '13773': 'Portuguese League',
@@ -220,12 +226,43 @@ def collect():
                             'complete': len([e for e in all_events if e['result']]) == len(all_events),
                         }, f, indent=2)
 
-                    # Write to unified DB
+                    # Write to SQLite (legacy)
                     try:
                         from db_writer import save_betpawa_round
                         save_betpawa_round(rid, season=s.get('name'), events=all_events, standings=standings)
                     except Exception as e:
-                        print(f"  [db] DB write skipped: {e}", flush=True)
+                        print(f"  [sqldb] DB write skipped: {e}", flush=True)
+
+                    # Write to Postgres (unified)
+                    try:
+                        # Split events by league for individual save_round calls
+                        league_events = {}
+                        for ev in all_events:
+                            lname = ev.get('league', 'Unknown')
+                            league_events.setdefault(lname, []).append(ev)
+                        for lname, evts in league_events.items():
+                            pg_matches = []
+                            for i, ev in enumerate(evts, 1):
+                                if ev.get('hg') is None: continue  # skip no-result events
+                                od = ev.get('markets', {}).get('1x2', {})
+                                pg_matches.append({
+                                    'n': i, 'home': ev['home_team'], 'away': ev['away_team'],
+                                    'hg': ev['hg'], 'ag': ev['ag'], 'result': ev['result'],
+                                    'outcome': 'W' if ev['hg'] > ev['ag'] else ('D' if ev['hg'] == ev['ag'] else 'L'),
+                                    'parity': 'E' if (ev['hg']+ev['ag']) % 2 == 0 else 'O',
+                                    'odds': {'1x2': od},
+                                })
+                            if pg_matches:
+                                pg_standings = []
+                                for lname2, st_list in standings.items():
+                                    if lname2 == lname:
+                                        pg_standings = [{'pos': s['pos'], 'team': s['team'],
+                                            'points': s['pts'], 'played': s['played'],
+                                            'w': s['w'], 'd': s['d'], 'l': s['l'],
+                                            'gf': s['gf'], 'ga': s['ga'], 'gd': s['gd']} for s in st_list]
+                                pg_save_round(str(rid), 'betpawa', lname, pg_matches, pg_standings)
+                    except Exception as e:
+                        print(f"  [pg] write skipped: {e}", flush=True)
 
                     for p in new_results:
                         od = p['markets']['1x2']

@@ -7,7 +7,7 @@ from collections import Counter
 sys.path.insert(0, os.path.dirname(__file__))
 from global_learner import init_tables, build_fvecs, mine_rules, save_rules, load_previous_rules
 
-DB = os.environ['DATABASE_URL']
+DB = os.environ.get('DATABASE_URL', '')
 
 def load_source(src, limit=1000):
     with psycopg.connect(DB, row_factory=dict_row) as conn:

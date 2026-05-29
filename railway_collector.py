@@ -9,7 +9,7 @@ from datetime import datetime, timezone, timedelta
 from flask import Flask, jsonify
 from db import init_db, save_round as db_save_round
 
-DATABASE_URL = os.environ['DATABASE_URL']
+DATABASE_URL = os.environ.get('DATABASE_URL', '')
 PORT         = int(os.environ.get('PORT', 8080))
 
 BASE         = 'https://vl.betkraft.co.uk'

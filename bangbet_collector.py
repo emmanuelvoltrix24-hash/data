@@ -23,6 +23,12 @@ MATCH_LIST_URL = f'{BASE}/virtual/match/list'
 SAVE_DIR = '/home/voltrix/vfl_data'
 os.makedirs(SAVE_DIR, exist_ok=True)
 
+# Postgres writer (optional)
+try:
+    from db import save_round as pg_save_round
+except Exception:
+    def pg_save_round(*a, **kw): pass
+
 _seen_keys = set()
 
 def fetch(url, payload=None):
@@ -146,13 +152,38 @@ def collect():
                     with open(fn, 'w') as f:
                         json.dump(round_data, f, indent=2)
 
-                    # Write to unified DB
+                    # Write to SQLite (legacy)
                     try:
                         from db_writer import save_bangbet_round
                         save_bangbet_round(st, t_name, tournament_id=t_id,
                                            timestamp=ts, matches=matches, standings=standings)
                     except Exception as e:
-                        print(f"  [db] DB write skipped: {e}", flush=True)
+                        print(f"  [sqldb] DB write skipped: {e}", flush=True)
+
+                    # Write to Postgres (unified)
+                    try:
+                        pg_matches = []
+                        for i, m in enumerate(matches, 1):
+                            score = m.get('score', '?:?')
+                            parts = score.split(':')
+                            hg, ag = int(parts[0]), int(parts[1]) if len(parts) == 2 else 0
+                            ht = m.get('ht', m.get('periods', [{}])[0] if m.get('periods') else '')
+                            if isinstance(ht, dict):
+                                ht = f"{ht.get('homeScore','?')}:{ht.get('awayScore','?')}"
+                            pg_matches.append({
+                                'n': i, 'home': m['home'], 'away': m['away'],
+                                'hg': hg, 'ag': ag, 'result': score,
+                                'outcome': m.get('outcome', 'W' if hg > ag else ('D' if hg == ag else 'L')),
+                                'parity': m.get('parity', 'E' if (hg+ag) % 2 == 0 else 'O'),
+                                'ht': ht,
+                            })
+                        pg_standings = [{'pos': s['pos'], 'team': s['team'], 'points': s.get('pts', s.get('points')),
+                            'played': s['played'], 'w': s.get('w', s.get('wins')),
+                            'd': s.get('d', s.get('draws')), 'l': s.get('l', s.get('losses')),
+                            'gf': s['gf'], 'ga': s['ga'], 'gd': s.get('gd', s['gf']-s['ga'])} for s in standings]
+                        pg_save_round(str(st), 'bangbet', t_name, pg_matches, pg_standings)
+                    except Exception as e:
+                        print(f"  [pg] write skipped: {e}", flush=True)
 
                     # Also try to get odds from match/list
                     try:
