@@ -521,16 +521,30 @@ def mine_rules(fvecs, sources_used, min_hits=3, min_precision=0.78):
 def save_rules(rules, prev_rules, rounds_used, source='all'):
     with get_db() as conn:
         with conn.cursor() as cur:
-            new_keys = {(r['target'], json.dumps(r['conditions'],sort_keys=True), r['lag'], source)
-                        for r in rules}
-            for key, prev in prev_rules.items():
-                if key not in new_keys and prev['precision'] >= 0.85:
-                    cur.execute("""
-                        INSERT INTO global_failed_rules
-                        (target, conditions, lag, initial_precision, final_precision, hits, rounds_used, failed_at)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-                    """, (prev['target'], json.dumps(prev['conditions']), prev['lag'],
-                          prev['precision'], 0.0, prev['hits'], rounds_used, datetime.now()))
+            # Degradation check: compare precision of rules that still exist in both cycles
+            new_lookup = {}
+            for r in rules:
+                ck = json.dumps(r['conditions'], sort_keys=True)
+                new_lookup[(r['target'], ck, r['lag'])] = r
+            
+            prev_failed = 0
+            for (ptgt, pck, plag), prev in prev_rules.items():
+                key = (ptgt, pck, plag)
+                if key in new_lookup:
+                    new_r = new_lookup[key]
+                    # Same rule exists — check if precision degraded significantly
+                    drop = prev['precision'] - new_r['precision']
+                    if prev['precision'] >= 0.85 and drop > 0.10 and prev['total'] >= 20:
+                        cur.execute("""
+                            INSERT INTO global_failed_rules
+                            (target, conditions, lag, initial_precision, final_precision, hits, rounds_used, failed_at)
+                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                        """, (prev['target'], json.dumps(prev['conditions']), prev['lag'],
+                              prev['precision'], new_r['precision'], prev['hits'], rounds_used, datetime.now()))
+                        prev_failed += 1
+            
+            if prev_failed > 0:
+                print(f"  Degradation: {prev_failed} rules lost >10% precision")
 
             cur.execute("DELETE FROM global_rules WHERE source=%s", (source,))
             for r in rules:
