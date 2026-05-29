@@ -9,12 +9,41 @@ from global_learner import init_tables, build_fvecs, mine_rules, save_rules, loa
 
 DB = os.environ.get('DATABASE_URL', '')
 
+def normalize_data(data):
+    """Normalize match keys across sources: 'home'→'home_team', 'away'→'away_team'.
+    Also normalizes standings: 'pos'→'position', 'team'→'team_name' for betkraft compat."""
+    matches = data.get('matches', [])
+    for m in matches:
+        if 'home' in m and 'home_team' not in m:
+            m['home_team'] = m['home']
+        if 'away' in m and 'away_team' not in m:
+            m['away_team'] = m['away']
+        # Normalize odds from odds.1x2 into pre_markets format if present
+        if 'odds' in m and 'pre_markets' not in m:
+            x2 = m['odds'].get('1x2', {})
+            if x2:
+                m['pre_markets'] = {'1X2': [
+                    {'odd_value': str(x2.get('1', ''))},
+                    {'odd_value': str(x2.get('X', ''))},
+                    {'odd_value': str(x2.get('2', ''))},
+                ]}
+    # Normalize standings
+    standings = data.get('standings', [])
+    for s in standings:
+        if 'pos' in s and 'position' not in s:
+            s['position'] = s['pos']
+        if 'team_name' not in s and 'team' in s:
+            s['team_name'] = s['team']
+        if 'team' not in s and 'team_name' in s:
+            s['team'] = s['team_name']
+    return data
+
 def load_source(src, limit=1000):
     with psycopg.connect(DB, row_factory=dict_row) as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT data, source FROM rounds WHERE source=%s ORDER BY round_id DESC LIMIT %s", (src, limit))
             rows = cur.fetchall()
-    return [(r['data'], r['source']) for r in reversed(rows)]
+    return [(normalize_data(r['data']), r['source']) for r in reversed(rows)]
 
 init_tables()
 prev = load_previous_rules()

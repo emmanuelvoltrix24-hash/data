@@ -1,6 +1,7 @@
 -- VFL AI View — Flattened match-level data for AI consumption
+-- Handles all 4 source formats: betkraft (home_team/pre_markets),
+-- bangbet/betpawa/bongobongo (home/away/odds.1x2)
 -- Run: psql DATABASE_URL -f ai_view.sql
--- Each row = one match from one round, with all fields as direct columns
 
 CREATE OR REPLACE VIEW v_ai_features AS
 WITH match_data AS (
@@ -12,8 +13,8 @@ WITH match_data AS (
     r.collected_at,
     m.value as match_json,
     (m.value->>'n')::int as match_n,
-    m.value->>'home_team' as home_team,
-    m.value->>'away_team' as away_team,
+    COALESCE(m.value->>'home_team', m.value->>'home') as home_team,
+    COALESCE(m.value->>'away_team', m.value->>'away') as away_team,
     (m.value->>'hg')::int as home_goals,
     (m.value->>'ag')::int as away_goals,
     m.value->>'outcome' as outcome,
@@ -24,6 +25,10 @@ WITH match_data AS (
     (m.value->>'home_score_times')::jsonb as home_goal_times,
     (m.value->>'away_score_times')::jsonb as away_goal_times,
     m.value->'pre_markets' as pre_markets,
+    -- odds from 'odds.1x2' format (bangbet/betpawa/bongobongo)
+    m.value->'odds'->'1x2'->>'1' as odd_h_flat,
+    m.value->'odds'->'1x2'->>'X' as odd_d_flat,
+    m.value->'odds'->'1x2'->>'2' as odd_a_flat,
     r.data->'standings' as standings_json,
     r.data->>'season_id' as season_id,
     (r.data->>'chain_break')::boolean as chain_break
@@ -54,7 +59,7 @@ SELECT
     SPLIT_PART(md.ht_score, ':', 2)::int
   END as ht_away_goals,
 
-  -- Goal timing
+  -- Goal timing (betkraft only)
   jsonb_array_length(md.home_goal_times) as home_goal_count,
   jsonb_array_length(md.away_goal_times) as away_goal_count,
   (SELECT COUNT(*) FROM jsonb_array_elements_text(md.home_goal_times) t WHERE t::int > 60) as home_late_goals,
@@ -64,134 +69,69 @@ SELECT
 
   -- Standings for home team
   (SELECT (s.value->>'position')::int FROM jsonb_array_elements(md.standings_json) s 
-   WHERE s.value->>'team_name' = md.home_team LIMIT 1) as home_position,
+   WHERE s.value->>'team' = md.home_team OR s.value->>'team_name' = md.home_team LIMIT 1) as home_position,
   (SELECT (s.value->>'points')::int FROM jsonb_array_elements(md.standings_json) s 
-   WHERE s.value->>'team_name' = md.home_team LIMIT 1) as home_points,
-  (SELECT s.value->>'team_form' FROM jsonb_array_elements(md.standings_json) s 
-   WHERE s.value->>'team_name' = md.home_team LIMIT 1) as home_form,
+   WHERE s.value->>'team' = md.home_team OR s.value->>'team_name' = md.home_team LIMIT 1) as home_points,
+  (SELECT s.value->>'form' FROM jsonb_array_elements(md.standings_json) s 
+   WHERE s.value->>'team' = md.home_team OR s.value->>'team_name' = md.home_team LIMIT 1) as home_form,
 
   -- Standings for away team
   (SELECT (s.value->>'position')::int FROM jsonb_array_elements(md.standings_json) s 
-   WHERE s.value->>'team_name' = md.away_team LIMIT 1) as away_position,
+   WHERE s.value->>'team' = md.away_team OR s.value->>'team_name' = md.away_team LIMIT 1) as away_position,
   (SELECT (s.value->>'points')::int FROM jsonb_array_elements(md.standings_json) s 
-   WHERE s.value->>'team_name' = md.away_team LIMIT 1) as away_points,
-  (SELECT s.value->>'team_form' FROM jsonb_array_elements(md.standings_json) s 
-   WHERE s.value->>'team_name' = md.away_team LIMIT 1) as away_form,
+   WHERE s.value->>'team' = md.away_team OR s.value->>'team_name' = md.away_team LIMIT 1) as away_points,
+  (SELECT s.value->>'form' FROM jsonb_array_elements(md.standings_json) s 
+   WHERE s.value->>'team' = md.away_team OR s.value->>'team_name' = md.away_team LIMIT 1) as away_form,
 
-  -- 1X2 odds
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'1X2') o 
-   WHERE o.value->>'outcome_id' = '1' LIMIT 1)::float as odd_h,
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'1X2') o 
-   WHERE o.value->>'outcome_id' = 'X' LIMIT 1)::float as odd_d,
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'1X2') o 
-   WHERE o.value->>'outcome_id' = '2' LIMIT 1)::float as odd_a,
+  -- 1X2 odds (flat format from odds.1x2 — bangbet/betpawa/bongobongo)
+  md.odd_h_flat::float as odd_h_flat,
+  md.odd_d_flat::float as odd_d_flat,
+  md.odd_a_flat::float as odd_a_flat,
+  -- 1X2 odds (market list format from pre_markets — betkraft)
+  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'1X2') o LIMIT 1)::float as odd_h_mkt,
+  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'1X2') o OFFSET 1 LIMIT 1)::float as odd_d_mkt,
+  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'1X2') o OFFSET 2 LIMIT 1)::float as odd_a_mkt,
 
   -- GG/BTTS odds
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'GG') o 
-   WHERE o.value->>'outcome_id' IN ('Y','Yes') LIMIT 1)::float as gg_yes_odd,
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'GG') o 
-   WHERE o.value->>'outcome_id' IN ('N','No') LIMIT 1)::float as gg_no_odd,
+  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'GG') o LIMIT 1)::float as gg_yes_odd,
+  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'GG') o OFFSET 1 LIMIT 1)::float as gg_no_odd,
 
-  -- O/U 2.5 odds
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'TG25') o 
-   WHERE o.value->>'outcome_name' ILIKE '%over%' LIMIT 1)::float as ov25_odd,
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'TG25') o 
-   WHERE o.value->>'outcome_name' ILIKE '%under%' LIMIT 1)::float as un25_odd,
-
-  -- O/U 1.5
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'TG15') o 
-   WHERE o.value->>'outcome_id' = 'O' LIMIT 1)::float as ov15_odd,
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'TG35') o 
-   WHERE o.value->>'outcome_id' = 'O' LIMIT 1)::float as ov35_odd,
-
-  -- Total Goals odd/even
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'TGOE') o 
-   WHERE o.value->>'outcome_id' = 'E' LIMIT 1)::float as even_odd,
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'TGOE') o 
-   WHERE o.value->>'outcome_id' = 'O' LIMIT 1)::float as odd_goals_odd,
-
-  -- Double Chance
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'DC') o 
-   WHERE o.value->>'outcome_id' = '1X' LIMIT 1)::float as dc_1x_odd,
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'DC') o 
-   WHERE o.value->>'outcome_id' = '12' LIMIT 1)::float as dc_12_odd,
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'DC') o 
-   WHERE o.value->>'outcome_id' = 'X2' LIMIT 1)::float as dc_x2_odd,
-
-  -- First Team to Score
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'FTS') o 
-   WHERE o.value->>'outcome_id' = 'H' LIMIT 1)::float as fts_h_odd,
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'FTS') o 
-   WHERE o.value->>'outcome_id' = 'A' LIMIT 1)::float as fts_a_odd,
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'FTS') o 
-   WHERE o.value->>'outcome_id' = '0' LIMIT 1)::float as fts_0_odd,
-
-  -- HT 1X2
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'H1X2') o 
-   WHERE o.value->>'outcome_id' = '1' LIMIT 1)::float as ht_1x2_h_odd,
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'H1X2') o 
-   WHERE o.value->>'outcome_id' = 'X' LIMIT 1)::float as ht_1x2_d_odd,
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'H1X2') o 
-   WHERE o.value->>'outcome_id' = '2' LIMIT 1)::float as ht_1x2_a_odd,
-
-  -- Team Goal/No Goal
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'T1G') o 
-   WHERE o.value->>'outcome_id' = 'Y' LIMIT 1)::float as t1g_yes_odd,
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'T1G') o 
-   WHERE o.value->>'outcome_id' = 'N' LIMIT 1)::float as t1g_no_odd,
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'T2G') o 
-   WHERE o.value->>'outcome_id' = 'Y' LIMIT 1)::float as t2g_yes_odd,
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'T2G') o 
-   WHERE o.value->>'outcome_id' = 'N' LIMIT 1)::float as t2g_no_odd,
-
-  -- HT Both Score
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'HGG') o 
-   WHERE o.value->>'outcome_id' = 'Y' LIMIT 1)::float as hgg_yes_odd,
-
-  -- Time of First Goal
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'TFG') o 
-   WHERE o.value->>'outcome_id' = '1' LIMIT 1)::float as tfg_1_15_odd,
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'TFG') o 
-   WHERE o.value->>'outcome_id' = '0' LIMIT 1)::float as tfg_no_goal_odd,
-
-  -- Multi-Goals
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'MG') o 
-   WHERE o.value->>'outcome_id' = '0-2' LIMIT 1)::float as mg_02_odd,
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'MG') o 
-   WHERE o.value->>'outcome_id' = '1-3' LIMIT 1)::float as mg_13_odd,
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'MG') o 
-   WHERE o.value->>'outcome_id' = '2-4' LIMIT 1)::float as mg_24_odd,
-
-  -- Correct Score (most common)
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'CS') o 
-   WHERE o.value->>'outcome_id' = '1-0' LIMIT 1)::float as cs_10_odd,
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'CS') o 
-   WHERE o.value->>'outcome_id' = '2-1' LIMIT 1)::float as cs_21_odd,
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'CS') o 
-   WHERE o.value->>'outcome_id' = '0-0' LIMIT 1)::float as cs_00_odd,
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'CS') o 
-   WHERE o.value->>'outcome_id' = '1-1' LIMIT 1)::float as cs_11_odd,
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'CS') o 
-   WHERE o.value->>'outcome_id' = '0-1' LIMIT 1)::float as cs_01_odd,
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'CS') o 
-   WHERE o.value->>'outcome_id' = '2-0' LIMIT 1)::float as cs_20_odd,
-
-  -- 1X2 & BTTS combo
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'1X2G') o 
-   WHERE o.value->>'outcome_id' = '1G' LIMIT 1)::float as x2g_1g_odd,
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'1X2G') o 
-   WHERE o.value->>'outcome_id' = '2G' LIMIT 1)::float as x2g_2g_odd,
-
-  -- HT/FT Double Result (common: HH, DD, AA)
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'DR') o 
-   WHERE o.value->>'outcome_id' = 'HH' LIMIT 1)::float as dr_hh_odd,
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'DR') o 
-   WHERE o.value->>'outcome_id' = 'DD' LIMIT 1)::float as dr_dd_odd,
-  (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'DR') o 
-   WHERE o.value->>'outcome_id' = 'AA' LIMIT 1)::float as dr_aa_odd
+  -- Unified odds (prefer flat, fallback to market)
+  COALESCE(md.odd_h_flat::float, 
+    (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'1X2') o LIMIT 1)::float) as odd_h,
+  COALESCE(md.odd_d_flat::float,
+    (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'1X2') o OFFSET 1 LIMIT 1)::float) as odd_d,
+  COALESCE(md.odd_a_flat::float,
+    (SELECT o.value->>'odd_value' FROM jsonb_array_elements(md.pre_markets->'1X2') o OFFSET 2 LIMIT 1)::float) as odd_a
 
 FROM match_data md
-ORDER BY md.round_id, md.match_n;
+WHERE md.home_team IS NOT NULL AND md.away_team IS NOT NULL;
 
--- Grant access
-GRANT SELECT ON v_ai_features TO PUBLIC;
+-- Sequence view: round N → N+1 comparison for cross-round patterns
+CREATE OR REPLACE VIEW v_ai_sequences AS
+SELECT 
+  a.round_id as round_n,
+  b.round_id as round_n1,
+  a.source,
+  a.match_n,
+  a.home_team as home_team_n,
+  a.away_team as away_team_n,
+  a.outcome as outcome_n,
+  a.parity as parity_n,
+  a.total_goals as total_goals_n,
+  b.outcome as outcome_n1,
+  b.parity as parity_n1,
+  b.total_goals as total_goals_n1,
+  b.odd_h as odd_h_n1,
+  b.odd_d as odd_d_n1,
+  b.odd_a as odd_a_n1
+FROM v_ai_features a
+JOIN v_ai_features b ON a.source = b.source 
+  AND a.match_n = b.match_n
+  AND b.round_id > a.round_id
+  AND NOT EXISTS (
+    SELECT 1 FROM rounds r 
+    WHERE r.source = a.source 
+    AND r.round_id > a.round_id 
+    AND r.round_id < b.round_id
+  );
