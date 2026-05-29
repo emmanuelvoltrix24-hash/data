@@ -284,8 +284,8 @@ def predict_round(features, rules):
 _rules_cache = {'rules': None, 'loaded_at': 0}
 
 def get_db():
-    import psycopg
-    return psycopg.connect(DB_URL)
+    import psycopg2
+    return psycopg2.connect(DB_URL)
 
 def load_rules(min_prec=0.75, min_total=30, max_rules=5000):
     now = time.time()
@@ -370,6 +370,27 @@ def save_prediction(round_id, source, slot, target, pred_type, pred_val,
         ON CONFLICT (round_id, source, slot, target) DO NOTHING
     """, (round_id, source, slot, target, pred_type, pred_val,
           precision, hits, total, lag, confidence, ev_score, features_json))
+    conn.commit()
+    conn.close()
+
+def save_predictions_batch(predictions_list):
+    conn = get_db()
+    cur = conn.cursor()
+    for p in predictions_list:
+        try:
+            cur.execute("""
+                INSERT INTO predictions 
+                (round_id, source, slot, target, pred_type, pred_val,
+                 precision, hits, total, lag, confidence, ev_score, features)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (round_id, source, slot, target) DO NOTHING
+            """, (p['round_id'], p['source'], p['slot'], p['target'],
+                  p.get('pred_type'), p.get('pred_val'),
+                  p['precision'], p['hits'], p['total'],
+                  p['lag'], p['confidence'], p['ev_score'],
+                  p['features']))
+        except:
+            pass
     conn.commit()
     conn.close()
 
@@ -474,25 +495,26 @@ def main():
                 predictions = predict_round(features, rules)
                 
                 if predictions:
-                    # Save top predictions (max 3 per slot)
-                    saved = 0
+                    # Batch save top 15 predictions
+                    batch = []
+                    seen_targets = set()
                     for p in predictions:
-                        key2 = (p['slot'], p.get('pred_type',''), p.get('pred_val',''))
-                        # Save the best per slot+type
-                        slot_key = f"{p['slot']}_{p.get('pred_type','')}"
-                        
-                    for p in predictions[:20]:  # top 20
-                        try:
-                            save_prediction(
-                                rid, source, p['slot'], p['target'],
-                                p.get('pred_type'), p.get('pred_val'),
-                                p['precision'], p['hits'], p['total'],
-                                p['lag'], p['confidence'], p['ev_score'],
-                                json.dumps(features, default=str)
-                            )
-                            saved += 1
-                        except:
-                            pass
+                        tkey = (p['slot'], p.get('pred_type',''), p.get('pred_val',''))
+                        if tkey in seen_targets:
+                            continue
+                        seen_targets.add(tkey)
+                        batch.append({
+                            'round_id': rid, 'source': source, 'slot': p['slot'],
+                            'target': p['target'], 'pred_type': p.get('pred_type'),
+                            'pred_val': p.get('pred_val'),
+                            'precision': p['precision'], 'hits': p['hits'],
+                            'total': p['total'], 'lag': p['lag'],
+                            'confidence': p['confidence'], 'ev_score': p['ev_score'],
+                            'features': json.dumps(features, default=str),
+                        })
+                        if len(batch) >= 15:
+                            break
+                    save_predictions_batch(batch)
                     
                     # Show pattern
                     p5 = features.get('M5_parity', '-')
@@ -501,7 +523,7 @@ def main():
                     p10 = features.get('M10_parity', '-')
                     print(f"  [{datetime.now().strftime('%H:%M:%S')}] {source:>12} #{rid:<12} "
                           f"M5={p5} M6={p6} M7={p7} M10={p10} "
-                          f"→ {saved} predictions saved", flush=True)
+                          f"→ {len(batch)} predictions", flush=True)
                 else:
                     print(f"  [{datetime.now().strftime('%H:%M:%S')}] {source:>12} #{rid:<12} "
                           f"→ no matching rules", flush=True)
