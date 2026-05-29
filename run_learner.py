@@ -49,9 +49,10 @@ init_tables()
 prev = load_previous_rules()
 
 configs = [
-    ('betkraft', 977,  5,  0.80),
-    ('betpawa',  862,  5,  0.80),
-    ('bangbet',  500,  10, 0.82),
+    ('betkraft',  200, 5,  0.80),
+    ('bangbet',   500, 5,  0.80),
+    ('bongobongo', 200, 5,  0.80),
+    ('betpawa',   200, 3,  0.75),
 ]
 
 all_rounds = []

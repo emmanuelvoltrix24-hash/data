@@ -13,7 +13,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 DATABASE_URL = os.environ.get('DATABASE_URL', '')
-MIN_ROUNDS   = 30
+MIN_ROUNDS   = 15
 RUN_EVERY    = 300
 
 
@@ -435,7 +435,7 @@ def save_rules(rules, prev_rules, rounds_used, source='all'):
                         INSERT INTO global_failed_rules
                         (target, conditions, lag, initial_precision, final_precision, hits, rounds_used, failed_at)
                         VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-                    """, (prev['target'], prev['conditions'], prev['lag'],
+                    """, (prev['target'], json.dumps(prev['conditions']), prev['lag'],
                           prev['precision'], 0.0, prev['hits'], rounds_used, datetime.now()))
 
             cur.execute("DELETE FROM global_rules WHERE source=%s", (source,))
