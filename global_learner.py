@@ -458,6 +458,45 @@ def mine_rules(fvecs, sources_used, min_hits=3, min_precision=0.78):
                                           'sources': src_set,
                                           'tentative': total < 8})
 
+            # 3-feature (higher min_hits to avoid noise)
+            for k1, k2, k3 in itertools.combinations(focus_keys, 3):
+                vc = defaultdict(Counter)
+                for i, j in pairs:
+                    v1,v2,v3,tv = fvecs[i].get(k1),fvecs[i].get(k2),fvecs[i].get(k3),target_vals.get(j)
+                    if None not in (v1,v2,v3,tv):
+                        w = 2 if i >= n*0.6 else 1
+                        vc[(v1,v2,v3)][tv] += w
+                for (v1,v2,v3), tc in vc.items():
+                    total = sum(tc.values())
+                    if total < min_hits + 2:  # stricter: need min_hits+2
+                        continue
+                    for tv, hits in tc.items():
+                        raw_prec = hits / total
+                        bayes_prec = (hits + PRIOR_MASS) / (total + PRIOR_STRENGTH)
+                        recall = hits / max(1, sum(tc2.get(tv,0) for tc2 in vc.values()))
+                        src_set = list({sources_used[i] for i,j in pairs
+                                       if fvecs[i].get(k1)==v1 and fvecs[i].get(k2)==v2
+                                       and fvecs[i].get(k3)==v3
+                                       and target_vals.get(j)==tv})
+
+                        if total >= 100: effective_threshold = 0.60
+                        elif total >= 50: effective_threshold = 0.65
+                        elif total >= 30: effective_threshold = 0.70
+                        elif total >= 15: effective_threshold = 0.75
+                        else: effective_threshold = min_precision + 0.05  # slightly stricter for 3-feat
+
+                        if bayes_prec >= effective_threshold or raw_prec == 1.0:
+                            bayes_ev = round(bayes_prec * hits * (1 + math.log10(total + 1)), 2)
+                            rules.append({'target': f"{target_key}={tv}",
+                                          'conditions': {k1:v1,k2:v2,k3:v3}, 'lag': lag,
+                                          'hits': hits, 'total': total,
+                                          'precision': round(raw_prec, 3),
+                                          'bayes_precision': round(bayes_prec, 3),
+                                          'bayes_ev': bayes_ev,
+                                          'recall': round(recall, 3),
+                                          'sources': src_set,
+                                          'tentative': total < 8})
+
     # Deduplicate — keep the one with highest bayes_ev
     seen = {}
     for r in rules:
