@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 """
-VFL Railway Runner — deploys all 5 collectors + learner + Flask health endpoint.
-Runs: betkraft, bongobongo, betpawa, bangbet, bet22
-Learner mines rules every 10 min in a background thread.
+VFL Railway Runner — deploys collectors + learner + predictor + auditor + dashboard.
 """
 import os, sys, json, time, threading
 from datetime import datetime
 
-# Ensure DB schema exists on Railway Postgres
 from db import init_db as init_postgres
 try:
     init_postgres()
@@ -25,15 +22,12 @@ def run_forever(name, module_name, collect_func_name='collect'):
             getattr(mod, collect_func_name)()
         except Exception as e:
             print(f"[railway] {name} crashed: {e} -- restarting in 10s", flush=True)
-            import traceback
-            traceback.print_exc()
+            import traceback; traceback.print_exc()
             time.sleep(10)
 
-# Learner thread — runs every 10 min
 def learner_loop():
-    import sys as _sys, psycopg
+    import psycopg
     from psycopg.rows import dict_row
-    _sys.path.insert(0, os.path.dirname(__file__))
     from global_learner import build_fvecs, mine_rules, save_rules, init_tables, load_previous_rules
     init_tables()
     while True:
@@ -51,8 +45,7 @@ def learner_loop():
                 except:
                     continue
                 rounds = [(r['data'], r['source']) for r in reversed(rows)]
-                if len(rounds) < 15:
-                    continue
+                if len(rounds) < 15: continue
                 all_rounds.extend(rounds)
                 fv, su = build_fvecs(rounds)
                 if fv:
@@ -68,75 +61,130 @@ def learner_loop():
             import traceback; traceback.print_exc()
         time.sleep(600)
 
-# Flask health endpoint
-from flask import Flask, jsonify
-app = Flask(__name__)
+from flask import Flask, jsonify, send_from_directory
 
+app = Flask(__name__, static_folder='dashboard')
+
+# ── Dashboard SPA ───────────────────────────────────────────────────────────
 @app.route('/')
-def health():
-    return jsonify({
-        'status': 'ok',
-        'service': 'vfl-railway',
-        'timestamp': datetime.now().isoformat(),
-        'collectors': list(COLLECTORS.keys()),
-    })
+def index():
+    return send_from_directory('dashboard', 'index.html')
 
-@app.route('/db/stats')
-def db_stats():
-    try:
-        from db import get_db
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("SELECT source, COUNT(*) FROM rounds GROUP BY source")
-        rows = cur.fetchall()
-        conn.close()
-        return jsonify({'rounds_per_source': {r['source']: r['count'] for r in rows}})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+@app.route('/favicon.ico')
+def favicon():
+    return send_from_directory('dashboard', 'favicon.ico') if os.path.exists('dashboard/favicon.ico') else ('', 204)
 
-@app.route('/rules')
-def rules_endpoint():
-    try:
-        from db import get_db
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("SELECT target, conditions, precision, ev, hits, total, source, lag, status FROM global_rules ORDER BY ev DESC LIMIT 50")
-        rows = cur.fetchall()
-        conn.close()
-        return jsonify([dict(r) for r in rows])
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+@app.route('/manifest.json')
+def manifest():
+    return send_from_directory('dashboard', 'manifest.json')
 
-@app.route('/audit')
-def audit_endpoint():
-    try:
-        from audit import audit_summary
-        return jsonify(audit_summary())
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+@app.route('/sw.js')
+def sw():
+    return send_from_directory('dashboard', 'sw.js')
 
-@app.route('/predictions')
-def predictions_endpoint():
-    try:
-        from db import get_db
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT round_id, source, slot, target, pred_type, pred_val, 
-                   precision, hits, total, confidence, created_at::text
-            FROM predictions 
-            ORDER BY created_at DESC 
-            LIMIT 50
-        """)
-        rows = cur.fetchall()
-        conn.close()
-        return jsonify([{
-            'round_id': r[0], 'source': r[1], 'slot': r[2], 'target': r[3],
-            'pred_type': r[4], 'pred_val': r[5], 'precision': r[6],
-            'hits': r[7], 'total': r[8], 'confidence': r[9], 'created_at': r[10],
-        } for r in rows])
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+# ── API Endpoints ───────────────────────────────────────────────────────────
+def get_db():
+    import psycopg2
+    return psycopg2.connect(os.environ.get('DATABASE_URL', ''))
+
+@app.route('/api/db/stats')
+def api_db_stats():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT source, COUNT(*) FROM rounds GROUP BY source")
+    rows = cur.fetchall()
+    conn.close()
+    return jsonify({'rounds_per_source': {r[0]: r[1] for r in rows}})
+
+@app.route('/api/predictions')
+def api_predictions():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT round_id, source, slot, target, pred_type, pred_val, 
+               precision, hits, total, confidence, created_at::text
+        FROM predictions 
+        ORDER BY created_at DESC 
+        LIMIT 100
+    """)
+    rows = cur.fetchall()
+    conn.close()
+    return jsonify({'predictions': [{
+        'round_id': r[0], 'source': r[1], 'slot': r[2], 'target': r[3],
+        'pred_type': r[4], 'pred_val': r[5], 'precision': r[6],
+        'hits': r[7], 'total': r[8], 'confidence': r[9], 'created_at': r[10],
+    } for r in rows]})
+
+@app.route('/api/audit')
+def api_audit():
+    from audit import audit_summary
+    return jsonify(audit_summary())
+
+@app.route('/api/audit/slots')
+def api_audit_slots():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT slot, COUNT(*) as checks,
+               SUM(CASE WHEN was_correct THEN 1 ELSE 0 END) as correct,
+               ROUND(100.0 * SUM(CASE WHEN was_correct THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 1) as accuracy
+        FROM audit_log
+        GROUP BY slot
+        ORDER BY slot
+    """)
+    rows = cur.fetchall()
+    conn.close()
+    return jsonify([{'slot': r[0], 'checks': r[1], 'correct': r[2], 'accuracy': r[3]} for r in rows])
+
+@app.route('/api/audit/log')
+def api_audit_log():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT source, round_id, slot, target, actual_val, was_correct
+        FROM audit_log
+        ORDER BY checked_at DESC
+        LIMIT 50
+    """)
+    rows = cur.fetchall()
+    conn.close()
+    return jsonify({'log': [{
+        'source': r[0], 'round_id': r[1], 'slot': r[2], 'target': r[3],
+        'actual_val': r[4], 'was_correct': r[5],
+    } for r in rows]})
+
+@app.route('/api/rules/top')
+def api_rules_top():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT target, precision, ev, hits, total, source, lag, status
+        FROM global_rules 
+        ORDER BY ev DESC 
+        LIMIT 50
+    """)
+    rows = cur.fetchall()
+    conn.close()
+    return jsonify({'rules': [{
+        'target': r[0], 'precision': r[1], 'ev': r[2], 'hits': r[3],
+        'total': r[4], 'source': r[5], 'lag': r[6], 'status': r[7],
+    } for r in rows]})
+
+@app.route('/api/rounds/recent')
+def api_rounds_recent():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT source, round_id::text, collected_at::text
+        FROM rounds
+        ORDER BY collected_at DESC
+        LIMIT 20
+    """)
+    rows = cur.fetchall()
+    conn.close()
+    return jsonify({'rounds': [{
+        'source': r[0], 'round_id': r[1], 'time': r[2],
+    } for r in rows]})
 
 COLLECTORS = {
     'betkraft':   {'module': 'railway_collector', 'func': 'collect'},
@@ -149,46 +197,41 @@ COLLECTORS = {
 def main():
     port = int(os.environ.get('PORT', 8080))
 
-    # Start all collectors in background
+    # Start collectors
     for name, info in COLLECTORS.items():
         t = threading.Thread(target=run_forever, args=(name, info['module'], info['func']), daemon=True)
         t.start()
         print(f"[railway] {name} thread started", flush=True)
 
-    # Start periodic learner
+    # Learner
     lt = threading.Thread(target=learner_loop, daemon=True)
     lt.start()
     print(f"[railway] learner thread started", flush=True)
 
-    # Start global prediction engine (DB-driven, no auth, all sources)
+    # Global predictor
     def start_predictor():
         time.sleep(30)
         try:
             from global_predictor import main as predictor_main
-            print("[railway] global predictor starting...", flush=True)
             predictor_main()
         except Exception as e:
-            print(f"[railway] global predictor crashed: {e}", flush=True)
+            print(f"[railway] predictor crashed: {e}", flush=True)
             import traceback; traceback.print_exc()
-    pt = threading.Thread(target=start_predictor, daemon=True)
-    pt.start()
-    print(f"[railway] global predictor thread started", flush=True)
+    threading.Thread(target=start_predictor, daemon=True).start()
+    print(f"[railway] predictor thread started", flush=True)
 
-    # Start auditor (checks predictions vs actual results every 30s)
+    # Auditor
     def start_auditor():
         time.sleep(60)
         try:
             from audit import main as audit_main
-            print("[railway] auditor starting...", flush=True)
             audit_main()
         except Exception as e:
             print(f"[railway] auditor crashed: {e}", flush=True)
             import traceback; traceback.print_exc()
-    at = threading.Thread(target=start_auditor, daemon=True)
-    at.start()
+    threading.Thread(target=start_auditor, daemon=True).start()
     print(f"[railway] auditor thread started", flush=True)
 
-    # Run Flask in main thread
     print(f"[railway] Starting Flask on :{port}", flush=True)
     app.run(host='0.0.0.0', port=port)
 
