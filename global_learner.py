@@ -6,7 +6,7 @@ Normalizes data to a common format before mining.
 New collectors just need to write to the rounds table via db.save_round() —
 no changes needed here.
 """
-import os, json, time, itertools
+import os, json, time, itertools, math
 from collections import Counter, defaultdict
 from datetime import datetime
 import psycopg
@@ -335,7 +335,20 @@ def build_fvecs(rounds_with_source):
 # ── Rule mining ───────────────────────────────────────────────────────────────
 
 def mine_rules(fvecs, sources_used, min_hits=3, min_precision=0.78):
+    """
+    Mine predictive rules from feature vectors.
+    
+    Enhancements:
+    - Bayesian precision: (hits + prior_mass) / (total + prior_strength)
+      to avoid overvaluing tiny 100% samples.
+    - Dynamic min_precision: lower threshold for larger sample sizes.
+    - Sorting by Bayesian EV (= bayes_precision * hits * log10(total+1))
+      so high-volume rules at moderate precision can rank above tiny 100% ones.
+    - 100% rules are still kept regardless of sample size (user requirement).
+    """
     n = len(fvecs)
+    if n == 0:
+        return []
     all_keys = list(fvecs[0].keys())
     focus_keys = [k for k in all_keys if any(
         k.startswith(f"M{s}_") for s in [5,6,7,10]
@@ -344,6 +357,11 @@ def mine_rules(fvecs, sources_used, min_hits=3, min_precision=0.78):
     # Only predict outcome/parity/cs targets
     target_keys = [k for k in all_keys if k.endswith('_outcome') or
                    k.endswith('_parity') or k.endswith('_cs')]
+
+    # Bayesian prior: assume 36% baseline (3-way average) with 10 pseudo-observations
+    PRIOR_PRECISION = 0.36
+    PRIOR_STRENGTH  = 10
+    PRIOR_MASS      = PRIOR_PRECISION * PRIOR_STRENGTH
 
     rules = []
 
@@ -363,18 +381,37 @@ def mine_rules(fvecs, sources_used, min_hits=3, min_precision=0.78):
                         vc[cv][tv] += w
                 for cv, tc in vc.items():
                     total = sum(tc.values())
-                    if total < min_hits: continue
+                    if total < min_hits:
+                        continue
                     for tv, hits in tc.items():
-                        prec = hits / total
-                        if prec >= min_precision:
-                            recall = hits / max(1, sum(tc2.get(tv,0) for tc2 in vc.values()))
-                            src_set = list({sources_used[i] for i, j in pairs
-                                           if fvecs[i].get(ck)==cv and target_vals.get(j)==tv})
+                        raw_prec = hits / total
+                        bayes_prec = (hits + PRIOR_MASS) / (total + PRIOR_STRENGTH)
+                        recall = hits / max(1, sum(tc2.get(tv,0) for tc2 in vc.values()))
+                        src_set = list({sources_used[i] for i, j in pairs
+                                       if fvecs[i].get(ck)==cv and target_vals.get(j)==tv})
+
+                        # Dynamic threshold: larger samples can use lower precision
+                        if total >= 100:
+                            effective_threshold = 0.60
+                        elif total >= 50:
+                            effective_threshold = 0.65
+                        elif total >= 30:
+                            effective_threshold = 0.70
+                        elif total >= 15:
+                            effective_threshold = 0.75
+                        else:
+                            effective_threshold = min_precision
+
+                        # Keep rule if: (bayesian >= threshold) OR (raw 100% perfect)
+                        if bayes_prec >= effective_threshold or raw_prec == 1.0:
+                            bayes_ev = round(bayes_prec * hits * (1 + math.log10(total + 1)), 2)
                             rules.append({'target': f"{target_key}={tv}",
                                           'conditions': {ck: cv}, 'lag': lag,
                                           'hits': hits, 'total': total,
-                                          'precision': round(prec,3),
-                                          'recall': round(recall,3),
+                                          'precision': round(raw_prec, 3),
+                                          'bayes_precision': round(bayes_prec, 3),
+                                          'bayes_ev': bayes_ev,
+                                          'recall': round(recall, 3),
                                           'sources': src_set,
                                           'tentative': total < 8})
 
@@ -388,27 +425,44 @@ def mine_rules(fvecs, sources_used, min_hits=3, min_precision=0.78):
                         vc[(v1,v2)][tv] += w
                 for (v1,v2), tc in vc.items():
                     total = sum(tc.values())
-                    if total < min_hits: continue
+                    if total < min_hits:
+                        continue
                     for tv, hits in tc.items():
-                        prec = hits/total
-                        if prec >= min_precision:
-                            recall = hits/max(1, sum(tc2.get(tv,0) for tc2 in vc.values()))
-                            src_set = list({sources_used[i] for i,j in pairs
-                                           if fvecs[i].get(k1)==v1 and fvecs[i].get(k2)==v2
-                                           and target_vals.get(j)==tv})
+                        raw_prec = hits / total
+                        bayes_prec = (hits + PRIOR_MASS) / (total + PRIOR_STRENGTH)
+                        recall = hits / max(1, sum(tc2.get(tv,0) for tc2 in vc.values()))
+                        src_set = list({sources_used[i] for i,j in pairs
+                                       if fvecs[i].get(k1)==v1 and fvecs[i].get(k2)==v2
+                                       and target_vals.get(j)==tv})
+
+                        if total >= 100:
+                            effective_threshold = 0.60
+                        elif total >= 50:
+                            effective_threshold = 0.65
+                        elif total >= 30:
+                            effective_threshold = 0.70
+                        elif total >= 15:
+                            effective_threshold = 0.75
+                        else:
+                            effective_threshold = min_precision
+
+                        if bayes_prec >= effective_threshold or raw_prec == 1.0:
+                            bayes_ev = round(bayes_prec * hits * (1 + math.log10(total + 1)), 2)
                             rules.append({'target': f"{target_key}={tv}",
                                           'conditions': {k1:v1,k2:v2}, 'lag': lag,
                                           'hits': hits, 'total': total,
-                                          'precision': round(prec,3),
-                                          'recall': round(recall,3),
+                                          'precision': round(raw_prec, 3),
+                                          'bayes_precision': round(bayes_prec, 3),
+                                          'bayes_ev': bayes_ev,
+                                          'recall': round(recall, 3),
                                           'sources': src_set,
                                           'tentative': total < 8})
 
-    # Deduplicate
+    # Deduplicate — keep the one with highest bayes_ev
     seen = {}
     for r in rules:
         key = (r['target'], json.dumps(r['conditions'], sort_keys=True), r['lag'])
-        if key not in seen or r['precision'] > seen[key]['precision']:
+        if key not in seen or r.get('bayes_ev', 0) > seen[key].get('bayes_ev', 0):
             seen[key] = r
 
     # Conflict detection
@@ -421,7 +475,8 @@ def mine_rules(fvecs, sources_used, min_hits=3, min_precision=0.78):
         ck = (json.dumps(r['conditions'], sort_keys=True), r['lag'])
         r['conflict'] = ck in conflicts
 
-    return sorted(seen.values(), key=lambda r: (-r['precision'], -r['hits']))
+    # Sort by bayes_ev descending (best EV first)
+    return sorted(seen.values(), key=lambda r: -r.get('bayes_ev', 0))
 
 
 def save_rules(rules, prev_rules, rounds_used, source='all'):
@@ -440,7 +495,7 @@ def save_rules(rules, prev_rules, rounds_used, source='all'):
 
             cur.execute("DELETE FROM global_rules WHERE source=%s", (source,))
             for r in rules:
-                ev = round(r['precision'] * r['hits'], 2)
+                ev = r.get('bayes_ev', round(r['precision'] * r['hits'], 2))
                 cur.execute("""
                     INSERT INTO global_rules
                     (target, conditions, lag, hits, total, precision, recall, ev,
