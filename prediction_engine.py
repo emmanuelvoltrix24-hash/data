@@ -19,33 +19,18 @@ LIVE_URL    = 'https://vl.betkraft.co.uk/live'
 DATA_URL    = 'https://vl.betkraft.co.uk/data'
 STANDING_URL = 'https://vl.betkraft.co.uk/standing/1/0'
 
-COOKIES = {}
 DB_URL = os.environ.get('DATABASE_URL', '')
 POLL_INTERVAL = 3  # seconds between polls
 BET_WINDOW = 180   # seconds before next round closes
 
-# ── Auth / Cookies ──────────────────────────────────────────────────────────
-def ensure_cookies():
-    global COOKIES
-    try:
-        from auth import ensure_session, load_cookies
-        ensure_session()
-        COOKIES = load_cookies()
-    except:
-        pass
-
-def cs():
-    """Get current cookies dict."""
-    return COOKIES if COOKIES else {}
-
-# ── API calls ────────────────────────────────────────────────────────────────
+# ── API calls (no auth needed) ──────────────────────────────────────────────
 def get_periods():
-    r = requests.get(PERIODS_URL, cookies=cs(), timeout=10)
+    r = requests.get(PERIODS_URL, timeout=10)
     return r.json()['data']['periods']
 
 def get_live(period: dict) -> Optional[list]:
     payload = {k: period[k] for k in ('competition_id','end_time','round_number_id','start_time')}
-    r = requests.post(LIVE_URL, cookies=cs(), json=payload, timeout=10)
+    r = requests.post(LIVE_URL, json=payload, timeout=10)
     if r.status_code == 200:
         data = r.json()
         if data.get('status_code') == 200 and data.get('data'):
@@ -53,14 +38,13 @@ def get_live(period: dict) -> Optional[list]:
     return None
 
 def get_standings() -> dict:
-    r = requests.get(STANDING_URL, cookies=cs(), timeout=10)
+    r = requests.get(STANDING_URL, timeout=10)
     if r.status_code == 200:
         return {s['team_name']: s for s in r.json()['data']['standings']}
     return {}
 
 def get_next_odds() -> list:
-    """Fetch /data for next round odds."""
-    r = requests.get(DATA_URL, cookies=cs(), timeout=10)
+    r = requests.get(DATA_URL, timeout=10)
     if r.status_code == 200:
         try:
             return r.json()['data']['matches']
@@ -120,10 +104,12 @@ def bucket_prob(prob: float) -> str:
     return '<30'
 
 def extract_features(matches: list, standings: dict) -> dict:
-    """Extract all features from a completed round's matches."""
+    """Extract all features from a completed round's matches.
+    Matches can have 'n' field or be positional (0-indexed list).
+    """
     feat = {}
-    for m in matches:
-        n = m['n']
+    for i, m in enumerate(matches):
+        n = m.get('n', i + 1)  # use n field or position
         hg = int(m.get('hg', 0))
         ag = int(m.get('ag', 0))
         total = hg + ag
@@ -395,19 +381,15 @@ def main():
     print("🔮 VFL Prediction Engine v2")
     print("   Polling betkraft for live rounds + predicting next round\n")
     
-    ensure_cookies()
     seen = set()
     prev_features = None
     next_odds = []
     standings = {}
+    last_rid = None
     cycle = 0
     
     while True:
         try:
-            # Re-auth if needed
-            if cycle % 20 == 0 and cycle > 0:
-                ensure_cookies()
-            
             periods = get_periods()
             now = datetime.now(timezone.utc)
             
