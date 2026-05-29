@@ -91,6 +91,10 @@ def normalize_matches(data, source, standings_dict=None):
 
 def extract_features(matches, standings_dict=None):
     """Extract features from normalized matches."""
+    # Track slot history across rounds for streaks (persisted across calls)
+    if not hasattr(extract_features, "_slot_history"):
+        extract_features._slot_history = {}
+    _slot_history = extract_features._slot_history
     feat = {}
     for m in matches:
         n = m['n']
@@ -112,6 +116,15 @@ def extract_features(matches, standings_dict=None):
         feat[f'M{n}_home_team'] = ht
         feat[f'M{n}_away_team'] = at
         
+        # Late goals detection (learned from historical patterns)
+        h_late = m.get('h_late_goals', 0) or 0
+        a_late = m.get('a_late_goals', 0) or 0
+        any_late = h_late > 0 or a_late > 0
+        feat[f'M{n}_h_late_goals'] = h_late
+        feat[f'M{n}_a_late_goals'] = a_late
+        feat[f'M{n}_any_late'] = any_late
+        feat[f'M{n}_both_late'] = (h_late > 0 and a_late > 0)
+        
         # Half-time
         ht_hg = m.get('ht_hg')
         ht_ag = m.get('ht_ag')
@@ -121,6 +134,15 @@ def extract_features(matches, standings_dict=None):
             feat[f'M{n}_ht_outcome'] = 'W' if ht_hg > ht_ag else ('L' if ht_hg < ht_ag else 'D')
             feat[f'M{n}_ht_hg'] = ht_hg
             feat[f'M{n}_ht_ag'] = ht_ag
+        
+        # Cross-round consistency — track slot history across rounds
+        if n not in _slot_history:
+            _slot_history[n] = []
+        _slot_history[n].append(feat[f'M{n}_outcome'])
+        if len(_slot_history[n]) >= 2:
+            feat[f'M{n}_streak2'] = ''.join(_slot_history[n][-2:])
+        if len(_slot_history[n]) >= 3:
+            feat[f'M{n}_streak3'] = ''.join(_slot_history[n][-3:])
         
         # Odds
         h_odd = m.get('h_odd')
@@ -181,6 +203,14 @@ def extract_features(matches, standings_dict=None):
             ar = a_form[:3].count('W')*3 + a_form[:3].count('D')
             ao = a_form[3:6].count('W')*3 + a_form[3:6].count('D')
             feat[f'M{n}_a_trend'] = 'up' if ar > ao else ('down' if ar < ao else 'flat')
+        
+        # Discretized odds buckets for feature matching
+        h_odd = m.get('h_odd')
+        a_odd = m.get('a_odd')
+        if h_odd:
+            feat[f'M{n}_h_prob'] = bucket_odds(h_odd)
+        if a_odd:
+            feat[f'M{n}_a_prob'] = bucket_odds(a_odd)
     
     # Round-level features (only if 10 matches)
     m_count = len(matches)
@@ -244,18 +274,87 @@ def predict_round(features, rules):
             else:
                 continue  # skip rules below 60%
             
-            # Extract the predicted value
+            # Extract the predicted value and type (all market types the learner can generate)
             pred_val = None
             pred_type = None
             if '_outcome=' in target:
                 pred_val = target.split('=')[1]
                 pred_type = 'outcome'
+            elif '_ht_outcome=' in target:
+                pred_val = target.split('=')[1]
+                pred_type = 'ht_outcome'
             elif '_parity=' in target:
                 pred_val = target.split('=')[1]
                 pred_type = 'parity'
+            elif '_ht_parity=' in target:
+                pred_val = target.split('=')[1]
+                pred_type = 'ht_parity'
+            elif '_total_parity=' in target:
+                pred_val = target.split('=')[1]
+                pred_type = 'total_parity'
             elif '_cs=' in target:
                 pred_val = target.split('=')[1]
                 pred_type = 'cs'
+            elif '_ht_cs=' in target:
+                pred_val = target.split('=')[1]
+                pred_type = 'ht_cs'
+            elif '_both_score=' in target:
+                pred_val = target.split('=')[1]
+                pred_type = 'both_score'
+            elif '_both_late=' in target:
+                pred_val = target.split('=')[1]
+                pred_type = 'both_late'
+            elif '_any_late=' in target:
+                pred_val = target.split('=')[1]
+                pred_type = 'any_late'
+            elif '_gg_yes=' in target:
+                pred_val = target.split('=')[1]
+                pred_type = 'gg_yes'
+            elif '_tg25_o=' in target:
+                pred_val = target.split('=')[1]
+                pred_type = 'tg25_o'
+            elif '_odds_fav=' in target:
+                pred_val = target.split('=')[1]
+                pred_type = 'odds_fav'
+            elif '_h_trend=' in target:
+                pred_val = target.split('=')[1]
+                pred_type = 'h_trend'
+            elif '_a_trend=' in target:
+                pred_val = target.split('=')[1]
+                pred_type = 'a_trend'
+            elif '_h_prob=' in target:
+                pred_val = target.split('=')[1]
+                pred_type = 'h_prob'
+            elif '_a_prob=' in target:
+                pred_val = target.split('=')[1]
+                pred_type = 'a_prob'
+            elif '_form_diff=' in target:
+                pred_val = target.split('=')[1]
+                pred_type = 'form_diff'
+            elif '_pos_diff=' in target:
+                pred_val = target.split('=')[1]
+                pred_type = 'pos_diff'
+            elif '_pts_diff=' in target:
+                pred_val = target.split('=')[1]
+                pred_type = 'pts_diff'
+            elif '_streak2=' in target:
+                pred_val = target.split('=')[1]
+                pred_type = 'streak2'
+            elif '_streak3=' in target:
+                pred_val = target.split('=')[1]
+                pred_type = 'streak3'
+            elif 'R_total_parity=' in target:
+                pred_val = target.split('=')[1]
+                pred_type = 'R_total_parity'
+            elif 'R_draws=' in target:
+                pred_val = target.split('=')[1]
+                pred_type = 'R_draws'
+            elif 'R_cs=' in target:
+                pred_val = target.split('=')[1]
+                pred_type = 'R_cs'
+            elif 'R_home_wins=' in target:
+                pred_val = target.split('=')[1]
+                pred_type = 'R_home_wins'
             
             key = (slot, pred_type, pred_val)
             if key in matched_keys:
@@ -497,7 +596,7 @@ def main():
                 predictions = predict_round(features, rules)
                 
                 if predictions:
-                    # Save best rule per slot per TYPE (outcome, parity, cs, ht_parity)
+                    # Save best rule per slot per TYPE (outcome, ht_outcome, parity, ht_parity, total_parity, cs, ht_cs, both_score, both_late)
                     batch = []
                     best_per_slot = {}  # slot_type -> (ev_score, pred_dict)
                     for p in predictions:
