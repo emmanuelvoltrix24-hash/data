@@ -189,7 +189,37 @@ def collect():
                     st = rd.get('scheduleDate')
                     key = f"{t_id}_{st}"
                     if key in _seen_keys: continue
-                    if rd.get('status') != 2: continue  # 2 = finished
+                    status = rd.get('status', 0)
+
+                    # Fetch odds BEFORE the round finishes (status=0 or 1 = upcoming/live)
+                    odds_cache = {}
+                    if status in (0, 1):
+                        ml = fetch(MATCH_LIST_URL, {
+                            'producer': 6, 'sportId': 'sr:sport:1',
+                            'tournamentId': t_id, 'country': 'ug',
+                        })
+                        if ml and ml.get('data', {}).get('data'):
+                            for om in ml['data']['data']:
+                                ht_name = om.get('homeTeamName', '')
+                                at_name = om.get('awayTeamName', '')
+                                ml2 = om.get('marketList', [])
+                                if ml2 and ml2[0].get('markets'):
+                                    outcomes = ml2[0]['markets'][0].get('outcomes', [])
+                                    if len(outcomes) >= 3:
+                                        h_od = outcomes[0].get('odds')
+                                        d_od = outcomes[1].get('odds')
+                                        a_od = outcomes[2].get('odds')
+                                        if h_od and d_od and a_od:
+                                            od = {'1': float(h_od), 'X': float(d_od), '2': float(a_od)}
+                                            odds_cache[ht_name] = od
+                                            odds_cache[at_name] = od
+                            if odds_cache:
+                                with _odds_cache_lock:
+                                    _pending_odds[key] = odds_cache
+                                print(f"  [odds] Cached {len(odds_cache)} odds for {t_name} #{rd.get('no')}", flush=True)
+                        continue  # Don't fetch results yet, wait for status=2
+
+                    if status != 2: continue  # 2 = finished
 
                     # Fetch results
                     res = fetch(RESULTS_URL, {
@@ -251,8 +281,8 @@ def collect():
                     except Exception as e:
                         print(f"  [sqldb] DB write skipped: {e}", flush=True)
 
-                    # Use cached odds (pre-fetched by background poller)
-                    cache_key = (t_id, st)
+                    # Use cached odds (fetched from upcoming round)
+                    cache_key = f"{t_id}_{st}"
                     with _odds_cache_lock:
                         odds_by_team = _pending_odds.pop(cache_key, {})
                     if odds_by_team:
