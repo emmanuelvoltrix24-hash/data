@@ -7,45 +7,64 @@
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1923; color: #e0e6ed; padding: 20px; }
-h1 { font-size: 1.5em; margin-bottom: 20px; color: #00e5ff; }
-h2 { font-size: 1.1em; margin: 20px 0 10px; color: #8899aa; }
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-bottom: 20px; }
-.card { background: #1a2d3d; border-radius: 8px; padding: 16px; border: 1px solid #2a3d4d; }
-.card h3 { font-size: 0.85em; color: #8899aa; margin-bottom: 4px; }
-.card .value { font-size: 1.8em; font-weight: bold; color: #e0e6ed; }
-.card .sub { font-size: 0.8em; color: #667788; margin-top: 4px; }
-table { width: 100%; border-collapse: collapse; font-size: 0.85em; }
+h1 { font-size: 1.5em; margin-bottom: 16px; color: #00e5ff; }
+h2 { font-size: 1.1em; margin: 0 0 10px 0; color: #8899aa; }
+
+.source-section { margin-bottom: 20px; border-radius: 8px; overflow: hidden; border: 1px solid #2a3d4d; }
+.source-header { padding: 12px 16px; display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
+.source-header:hover { filter: brightness(1.1); }
+.source-header .arrow { transition: transform .2s; font-size: 0.8em; color: #667788; }
+.source-header.collapsed .arrow { transform: rotate(-90deg); }
+.source-body { }
+.source-body.hidden { display: none; }
+
+.source-betkraft .source-header { background: #00e5ff15; }
+.source-bongobongo .source-header { background: #00c85315; }
+.source-bangbet .source-header { background: #ff6d0015; }
+.source-betpawa .source-header { background: #d500f915; }
+
+.source-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+.source-dot.betkraft { background: #00e5ff; }
+.source-dot.bongobongo { background: #00c853; }
+.source-dot.bangbet { background: #ff6d00; }
+.source-dot.betpawa { background: #d500f9; }
+
+.source-name { font-weight: 600; font-size: 1em; }
+.source-meta { font-size: 0.8em; color: #667788; margin-left: auto; }
+
+table { width: 100%; border-collapse: collapse; font-size: 0.82em; }
 th { text-align: left; padding: 8px 10px; border-bottom: 2px solid #2a3d4d; color: #8899aa; font-weight: 600; white-space: nowrap; }
-td { padding: 8px 10px; border-bottom: 1px solid #1a2d3d; white-space: nowrap; }
+td { padding: 7px 10px; border-bottom: 1px solid #1a2d3d; white-space: nowrap; }
 tr:hover { background: #1a2d3d; }
+.source-table-wrap { overflow-x: auto; padding: 0; }
+
 .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75em; font-weight: 600; }
 .badge-HIGH { background: #00c85320; color: #00c853; border: 1px solid #00c85340; }
 .badge-MEDIUM { background: #ffd60020; color: #ffd600; border: 1px solid #ffd60040; }
 .badge-LOW { background: #ff6d0020; color: #ff6d00; border: 1px solid #ff6d0040; }
-.badge-true, .badge-correct { background: #00c85320; color: #00c853; border: 1px solid #00c85340; }
-.badge-false, .badge-wrong { background: #ff174420; color: #ff1744; border: 1px solid #ff174440; }
-.badge-active { background: #00e5ff20; color: #00e5ff; border: 1px solid #00e5ff40; }
-.loading { text-align: center; padding: 40px; color: #667788; }
-.error { color: #ff1744; padding: 20px; text-align: center; }
-.nav { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
-.nav a { color: #00e5ff; text-decoration: none; padding: 6px 14px; border-radius: 4px; border: 1px solid #00e5ff40; cursor: pointer; }
-.nav a:hover { background: #00e5ff10; }
-.nav a.active { background: #00e5ff20; border-color: #00e5ff; }
+.badge-true,.badge-correct { background: #00c85320; color: #00c853; border: 1px solid #00c85340; }
+.badge-false,.badge-wrong { background: #ff174420; color: #ff1744; border: 1px solid #ff174440; }
+
+.nav { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+.nav a { color: #e0e6ed; text-decoration: none; padding: 8px 18px; border-radius: 6px; border: 1px solid #2a3d4d; cursor: pointer; font-size: 0.9em; }
+.nav a:hover { background: #2a3d4d; }
+.nav a.active { background: #00e5ff20; border-color: #00e5ff; color: #00e5ff; }
+
 .page { display: none; }
 .page.active { display: block; }
+
 .flex-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
-.conf-btn { padding: 4px 12px; border-radius: 4px; border: 1px solid #2a3d4d; background: #1a2d3d; color: #e0e6ed; cursor: pointer; font-size: 0.85em; }
+.conf-btn { padding: 4px 12px; border-radius: 4px; border: 1px solid #2a3d4d; background: transparent; color: #e0e6ed; cursor: pointer; font-size: 0.8em; }
 .conf-btn.active { background: #00e5ff20; border-color: #00e5ff; color: #00e5ff; }
-.conf-btn:hover { border-color: #00e5ff80; }
-.search-input { background: #1a2d3d; border: 1px solid #2a3d4d; color: #e0e6ed; padding: 6px 12px; border-radius: 4px; font-size: 0.85em; }
+.search-input { background: #1a2d3d; border: 1px solid #2a3d4d; color: #e0e6ed; padding: 6px 12px; border-radius: 4px; font-size: 0.85em; width: 200px; }
 .search-input:focus { outline: none; border-color: #00e5ff; }
-.empty { text-align: center; padding: 30px; color: #667788; font-size: 0.9em; }
-.mono { font-family: 'Courier New', monospace; font-size: 0.9em; }
-.source-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
-.source-betkraft { background: #00e5ff; }
-.source-bongobongo { background: #00c853; }
-.source-bangbet { background: #ff6d00; }
-.source-betpawa { background: #d500f9; }
+
+.empty { text-align: center; padding: 20px; color: #667788; font-size: 0.85em; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.card { background: #1a2d3d; border-radius: 6px; padding: 14px; border: 1px solid #2a3d4d; }
+.card h3 { font-size: 0.8em; color: #8899aa; margin-bottom: 4px; }
+.card .value { font-size: 1.6em; font-weight: bold; }
+.card .sub { font-size: 0.75em; color: #667788; margin-top: 2px; }
 </style>
 </head>
 <body>
@@ -53,37 +72,29 @@ tr:hover { background: #1a2d3d; }
 <h1>⚽ VFL Prediction Dashboard</h1>
 
 <div class="nav">
-  <a class="active" data-page="predictions">Predictions</a>
-  <a data-page="audit">Audit</a>
-  <a data-page="sources">Sources</a>
-  <a data-page="rules">Top Rules</a>
+  <a class="active" data-page="predictions">📊 Predictions</a>
+  <a data-page="audit">🎯 Audit</a>
+  <a data-page="sources">📡 Sources</a>
+  <a data-page="rules">📏 Rules</a>
 </div>
 
-<!-- PREDICTIONS -->
+<!-- PREDICTIONS - Grouped by Collector -->
 <div id="page-predictions" class="page active">
-  <div class="grid" id="stats-grid"></div>
   <div class="flex-row">
     <div class="conf-btn active" data-conf="all">All</div>
     <div class="conf-btn" data-conf="HIGH">HIGH</div>
     <div class="conf-btn" data-conf="MEDIUM">MEDIUM</div>
     <div class="conf-btn" data-conf="LOW">LOW</div>
-    <input class="search-input" id="pred-search" placeholder="Search team or slot..." style="margin-left:auto">
-    <span id="pred-count" style="color:#667788;font-size:0.85em">0</span>
+    <input class="search-input" id="pred-search" placeholder="Search slot or target...">
+    <span id="pred-count" style="color:#667788;font-size:0.8em"></span>
   </div>
-  <div style="overflow-x:auto">
-    <table>
-      <thead><tr>
-        <th>Time</th><th>Source</th><th>Round</th><th>Slot</th><th>Target</th><th>Type</th><th>Val</th><th>Prec</th><th>Hits</th><th>Total</th><th>Conf</th>
-      </tr></thead>
-      <tbody id="predictions-body"><tr><td colspan="11" class="empty">Loading...</td></tr></tbody>
-    </table>
-  </div>
+  <div id="predictions-container"></div>
 </div>
 
-<!-- AUDIT -->
+<!-- AUDIT - Grouped by Collector -->
 <div id="page-audit" class="page">
   <div class="grid" id="audit-stats"></div>
-  <h2>Best Markets Per Source</h2>
+  <h2>Best Markets Per Collector</h2>
   <div id="best-markets"></div>
   <h2>Accuracy by Slot</h2>
   <div style="overflow-x:auto">
@@ -93,8 +104,8 @@ tr:hover { background: #1a2d3d; }
   </div>
   <h2>Recent Audit Log</h2>
   <div style="overflow-x:auto">
-    <table><thead><tr><th>Source</th><th>Round</th><th>Slot</th><th>Target</th><th>Actual</th><th>Correct</th></tr></thead>
-      <tbody id="audit-log-body"><tr><td colspan="6" class="empty">Loading...</td></tr></tbody>
+    <table><thead><tr><th>Time</th><th>Source</th><th>Round</th><th>Slot</th><th>Predicted</th><th>Actual</th><th>Result</th></tr></thead>
+      <tbody id="audit-log-body"><tr><td colspan="7" class="empty">Loading...</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -103,34 +114,24 @@ tr:hover { background: #1a2d3d; }
 <div id="page-sources" class="page">
   <div class="grid" id="sources-grid"></div>
   <h2>Recent Rounds</h2>
-  <div style="overflow-x:auto">
-    <table><thead><tr><th>Time</th><th>Source</th><th>Round ID</th></tr></thead>
-      <tbody id="rounds-body"><tr><td colspan="3" class="empty">Loading...</td></tr></tbody>
-    </table>
-  </div>
+  <div id="rounds-by-source"></div>
 </div>
 
 <!-- RULES -->
 <div id="page-rules" class="page">
-  <h2>Top Rules by EV</h2>
   <div class="flex-row">
-    <input class="search-input" id="rules-search" placeholder="Search target..." style="margin-left:auto">
-    <span id="rules-count" style="color:#667788;font-size:0.85em">0</span>
+    <input class="search-input" id="rules-search" placeholder="Search target...">
+    <span id="rules-count" style="color:#667788;font-size:0.8em"></span>
   </div>
-  <div style="overflow-x:auto">
-    <table><thead><tr><th>Target</th><th>Prec</th><th>EV</th><th>Hits</th><th>Total</th><th>Source</th><th>Lag</th><th>Status</th></tr></thead>
-      <tbody id="rules-body"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
-    </table>
-  </div>
+  <div id="rules-container"></div>
 </div>
 
 <script>
 const API = window.location.origin;
 let activeConf = 'all';
-let activeTab = 'predictions';
-let predTimer, auditTimer, sourcesTimer, rulesTimer;
+let predTimer;
 
-// ── Navigation ──────────────────────────────────────────────────────────────
+// ── Nav ─────────────────────────────────────────────────────────────────────
 document.querySelectorAll('.nav a').forEach(a => {
   a.addEventListener('click', () => {
     document.querySelectorAll('.nav a').forEach(x => x.classList.remove('active'));
@@ -138,17 +139,15 @@ document.querySelectorAll('.nav a').forEach(a => {
     a.classList.add('active');
     const page = a.dataset.page;
     document.getElementById('page-' + page).classList.add('active');
-    activeTab = page;
-    clearInterval(predTimer); clearInterval(auditTimer);
-    clearInterval(sourcesTimer); clearInterval(rulesTimer);
+    clearInterval(predTimer);
     if (page === 'predictions') { loadPredictions(); predTimer = setInterval(loadPredictions, 10000); }
-    if (page === 'audit') { loadAudit(); auditTimer = setInterval(loadAudit, 30000); }
-    if (page === 'sources') { loadSources(); sourcesTimer = setInterval(loadSources, 30000); }
-    if (page === 'rules') { loadRules(); }
+    if (page === 'audit') loadAudit();
+    if (page === 'sources') loadSources();
+    if (page === 'rules') loadRules();
   });
 });
 
-// ── Confidence filter ──────────────────────────────────────────────────────
+// ── Filters ────────────────────────────────────────────────────────────────
 document.querySelectorAll('.conf-btn').forEach(b => {
   b.addEventListener('click', () => {
     document.querySelectorAll('.conf-btn').forEach(x => x.classList.remove('active'));
@@ -157,16 +156,14 @@ document.querySelectorAll('.conf-btn').forEach(b => {
     loadPredictions();
   });
 });
-
-// ── Search ──────────────────────────────────────────────────────────────────
 document.getElementById('pred-search').addEventListener('input', loadPredictions);
 document.getElementById('rules-search').addEventListener('input', loadRules);
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
-function cell(v) { return `<td>${v ?? '-'}</td>`; }
 function badge(c, label) { return `<span class="badge badge-${c}">${label ?? c}</span>`; }
 function pct(v) { return (v * 100).toFixed(1) + '%'; }
-function srcDot(s) { return `<span class="source-dot source-${s}"></span>`; }
+function dot(s) { return `<span class="source-dot ${s}"></span>`; }
+function cell(v) { return `<td>${v ?? '-'}</td>`; }
 
 async function api(url) {
   try {
@@ -178,158 +175,224 @@ async function api(url) {
   }
 }
 
-// ── Stats (always visible) ─────────────────────────────────────────────────
-async function loadStats() {
-  const d = await api(API + '/api/db/stats');
-  if (d.error) return document.getElementById('stats-grid').innerHTML = `<div class="card error">${d.error}</div>`;
-  const grid = document.getElementById('stats-grid');
-  let html = '', total = 0;
-  Object.entries(d.rounds_per_source || {}).forEach(([src, cnt]) => {
-    total += cnt;
-    html += `<div class="card"><h3>${srcDot(src)}${src}</h3><div class="value">${cnt}</div><div class="sub">rounds</div></div>`;
-  });
-  html += `<div class="card"><h3>Total</h3><div class="value">${total}</div><div class="sub">rounds across all sources</div></div>`;
-  grid.innerHTML = html;
+// Toggle source sections
+function toggleSource(el) {
+  const header = el.closest('.source-header');
+  header.classList.toggle('collapsed');
+  header.nextElementSibling.classList.toggle('hidden');
 }
 
-// ── Predictions ─────────────────────────────────────────────────────────────
+// ── Predictions (grouped by source) ─────────────────────────────────────────
 async function loadPredictions() {
   const d = await api(API + '/api/predictions');
   if (d.error) return;
   const search = (document.getElementById('pred-search').value || '').toLowerCase();
-  const list = (d.predictions || []).filter(p => {
-    if (activeConf !== 'all' && p.confidence !== activeConf) return false;
-    if (search && !p.source.includes(search) && !p.slot.toLowerCase().includes(search) && !p.target.toLowerCase().includes(search)) return false;
-    return true;
-  });
+  let list = d.predictions || [];
+  if (activeConf !== 'all') list = list.filter(p => p.confidence === activeConf);
+  if (search) list = list.filter(p => p.slot.toLowerCase().includes(search) || p.target.toLowerCase().includes(search) || p.source.includes(search));
+
   document.getElementById('pred-count').textContent = list.length + ' predictions';
-  let html = '';
+
+  // Group by source
+  const groups = {};
   list.forEach(p => {
-    html += `<tr>
-      ${cell(p.created_at?.substring(11, 19) || '-')}
-      ${cell(srcDot(p.source) + p.source)}
-      ${cell(p.round_id)}
-      ${cell(p.slot)}
-      ${cell(p.target)}
-      ${cell(p.pred_type)}
-      ${cell(p.pred_val)}
-      ${cell(pct(p.precision))}
-      ${cell(p.hits)}
-      ${cell(p.total)}
-      ${cell(badge(p.confidence))}
-    </tr>`;
+    if (!groups[p.source]) groups[p.source] = [];
+    groups[p.source].push(p);
   });
-  document.getElementById('predictions-body').innerHTML = html || '<tr><td colspan="11" class="empty">No predictions match</td></tr>';
+
+  const order = ['betkraft', 'bongobongo', 'bangbet', 'betpawa'];
+  let html = '';
+  order.forEach(src => {
+    const items = groups[src] || [];
+    if (!items.length) return;
+
+    // Count conf levels
+    const hi = items.filter(p => p.confidence === 'HIGH').length;
+    const med = items.filter(p => p.confidence === 'MEDIUM').length;
+
+    html += `<div class="source-section source-${src}">
+      <div class="source-header" onclick="toggleSource(this)">
+        <span class="arrow">▼</span>
+        ${dot(src)}
+        <span class="source-name">${src}</span>
+        <span class="source-meta">${items.length} predictions  ${hi ? '• ' + badge('HIGH', hi) : ''}  ${med ? '• ' + badge('MEDIUM', med) : ''}</span>
+      </div>
+      <div class="source-body">
+        <div class="source-table-wrap">
+          <table>
+            <thead><tr>
+              <th>Time</th><th>Round</th><th>Slot</th><th>Target</th><th>Type</th><th>Val</th><th>Prec</th><th>Hits</th><th>Total</th><th>Conf</th>
+            </tr></thead>
+            <tbody>`;
+    items.slice(0, 50).forEach(p => {
+      html += `<tr>
+        ${cell(p.created_at?.substring(11,19) || '-')}
+        ${cell(p.round_id)}
+        ${cell(p.slot)}
+        ${cell(p.target)}
+        ${cell(p.pred_type)}
+        ${cell(p.pred_val)}
+        ${cell(pct(p.precision))}
+        ${cell(p.hits)}
+        ${cell(p.total)}
+        ${cell(badge(p.confidence))}
+      </tr>`;
+    });
+    if (items.length > 50) html += `<tr><td colspan="10" style="color:#667788;text-align:center">...and ${items.length - 50} more</td></tr>`;
+    html += `</tbody></table>
+        </div>
+      </div>
+    </div>`;
+  });
+
+  document.getElementById('predictions-container').innerHTML = html || '<div class="empty">No predictions found</div>';
 }
 
 // ── Audit ───────────────────────────────────────────────────────────────────
 async function loadAudit() {
-  // Summary
   const summary = await api(API + '/api/audit');
   if (!summary.error) {
     document.getElementById('audit-stats').innerHTML = `
       <div class="card"><h3>Audited</h3><div class="value">${summary.total_audited}</div></div>
       <div class="card"><h3>Correct</h3><div class="value">${summary.total_correct}</div></div>
-      <div class="card"><h3>Accuracy</h3><div class="value">${summary.accuracy_pct}%</div></div>`;
+      <div class="card"><h3>Accuracy</h3><div class="value" style="color:${summary.accuracy_pct >= 60 ? '#00c853' : '#ff6d00'}">${summary.accuracy_pct}%</div></div>`;
     
-    // Best markets per source
     let bmHtml = '';
-    Object.entries(summary.best_markets_per_source || {}).forEach(([src, markets]) => {
-      bmHtml += `<div class="card"><h3>${srcDot(src)}${src}</h3>`;
+    const order = ['betkraft', 'bongobongo', 'bangbet', 'betpawa'];
+    order.forEach(src => {
+      const markets = (summary.best_markets_per_source || {})[src];
+      if (!markets || !markets.length) return;
+      bmHtml += `<div class="card"><h3>${dot(src)} ${src}</h3>`;
       markets.forEach(m => {
-        bmHtml += `<div style="margin-top:6px">${badge(m.market)} <strong>${m.accuracy}%</strong> (${m.correct}/${m.total} checks)</div>`;
+        bmHtml += `<div style="margin-top:5px">${badge(m.market)} <strong>${m.accuracy}%</strong> (${m.correct}/${m.total})</div>`;
       });
       bmHtml += `</div>`;
     });
-    document.getElementById('best-markets').innerHTML = bmHtml
-      ? `<div class="grid">${bmHtml}</div>`
-      : `<div class="card empty">No audit data yet</div>`;
+    document.getElementById('best-markets').innerHTML = bmHtml ? `<div class="grid">${bmHtml}</div>` : '<div class="empty">No audit data yet</div>';
   }
   
-  // Slots
   const slots = await api(API + '/api/audit/slots');
   if (!slots.error) {
     let html = '';
     (slots || []).forEach(s => {
-      html += `<tr>${cell(s.slot)}${cell(s.checks)}${cell(s.correct)}${cell(badge(s.accuracy >= 60 ? 'true' : 'false', s.accuracy + '%'))}</tr>`;
+      const ok = s.accuracy >= 60;
+      html += `<tr>${cell(s.slot)}${cell(s.checks)}${cell(s.correct)}${cell(badge(ok ? 'true' : 'false', s.accuracy + '%'))}</tr>`;
     });
     document.getElementById('audit-body').innerHTML = html || '<tr><td colspan="4" class="empty">No data</td></tr>';
   }
   
-  // Log
   const log = await api(API + '/api/audit/log');
   if (!log.error) {
     let html = '';
     (log.log || []).slice(0, 30).forEach(l => {
-      const ok = l.was_correct === true || l.was_correct === 'true';
+      const ok = l.was_correct === true || l.was_correct === 'true' || l.was_correct === '1';
       html += `<tr>
-        ${cell(srcDot(l.source) + l.source)}
+        ${cell(l.checked_at?.substring(11,19) || '-')}
+        ${cell(dot(l.source) + ' ' + l.source)}
         ${cell(l.round_id)}
         ${cell(l.slot)}
-        ${cell(l.target)}
+        ${cell(l.target?.split('=')[1] || l.target)}
         ${cell(l.actual_val)}
         ${cell(badge(ok ? 'correct' : 'wrong', ok ? '✓' : '✗'))}
       </tr>`;
     });
-    document.getElementById('audit-log-body').innerHTML = html || '<tr><td colspan="6" class="empty">No audit log yet</td></tr>';
+    document.getElementById('audit-log-body').innerHTML = html || '<tr><td colspan="7" class="empty">No audit log yet</td></tr>';
   }
 }
 
-// ── Sources ─────────────────────────────────────────────────────────────────
+// ── Sources (grouped rounds) ────────────────────────────────────────────────
 async function loadSources() {
   const stats = await api(API + '/api/db/stats');
   if (!stats.error) {
-    const grid = document.getElementById('sources-grid');
     let html = '', total = 0;
-    Object.entries(stats.rounds_per_source || {}).forEach(([src, cnt]) => {
+    const order = ['betkraft', 'bongobongo', 'bangbet', 'betpawa'];
+    order.forEach(src => {
+      const cnt = (stats.rounds_per_source || {})[src] || 0;
       total += cnt;
-      html += `<div class="card"><h3>${srcDot(src)}${src}</h3><div class="value">${cnt}</div><div class="sub">rounds</div></div>`;
+      html += `<div class="card"><h3>${dot(src)} ${src}</h3><div class="value">${cnt}</div><div class="sub">rounds collected</div></div>`;
     });
-    html += `<div class="card"><h3>Total</h3><div class="value">${total}</div><div class="sub">rounds collected</div></div>`;
-    grid.innerHTML = html;
+    html += `<div class="card"><h3>Total</h3><div class="value">${total}</div><div class="sub">rounds across all sources</div></div>`;
+    document.getElementById('sources-grid').innerHTML = html;
   }
   
   const rounds = await api(API + '/api/rounds/recent');
   if (!rounds.error) {
-    let html = '';
+    const grouped = {};
     (rounds.rounds || []).forEach(r => {
-      html += `<tr>
-        ${cell(r.time?.substring(11, 19) || '-')}
-        ${cell(srcDot(r.source) + r.source)}
-        ${cell(r.round_id)}
-      </tr>`;
+      if (!grouped[r.source]) grouped[r.source] = [];
+      grouped[r.source].push(r);
     });
-    document.getElementById('rounds-body').innerHTML = html || '<tr><td colspan="3" class="empty">No rounds found</td></tr>';
+    
+    let html = '';
+    const order = ['betkraft', 'bongobongo', 'bangbet', 'betpawa'];
+    order.forEach(src => {
+      const items = grouped[src] || [];
+      if (!items.length) return;
+      html += `<div class="source-section source-${src}" style="margin-bottom:8px">
+        <div class="source-header" onclick="toggleSource(this)" style="padding:8px 14px">
+          <span class="arrow">▼</span>
+          ${dot(src)}
+          <span class="source-name">${src}</span>
+          <span class="source-meta">${items.length} recent rounds</span>
+        </div>
+        <div class="source-body">
+          <div class="source-table-wrap">
+            <table><thead><tr><th>Time</th><th>Round ID</th></tr></thead><tbody>`;
+      items.forEach(r => {
+        html += `<tr>${cell(r.time?.substring(11,19) || '-')}${cell(r.round_id)}</tr>`;
+      });
+      html += `</tbody></table></div></div></div>`;
+    });
+    document.getElementById('rounds-by-source').innerHTML = html || '<div class="empty">No rounds found</div>';
   }
 }
 
-// ── Top Rules ──────────────────────────────────────────────────────────────
+// ── Rules (grouped by source) ──────────────────────────────────────────────
 async function loadRules() {
   const d = await api(API + '/api/rules/top');
   if (d.error) return;
   const search = (document.getElementById('rules-search').value || '').toLowerCase();
-  const list = (d.rules || []).filter(r => !search || r.target.toLowerCase().includes(search));
+  let list = d.rules || [];
+  if (search) list = list.filter(r => r.target.toLowerCase().includes(search));
   document.getElementById('rules-count').textContent = list.length + ' rules';
-  let html = '';
+  
+  const groups = {};
   list.forEach(r => {
-    html += `<tr>
-      ${cell(r.target)}
-      ${cell(pct(r.precision))}
-      ${cell(r.ev?.toFixed(1))}
-      ${cell(r.hits)}
-      ${cell(r.total)}
-      ${cell(srcDot(r.source) + r.source)}
-      ${cell('lag=' + r.lag)}
-      ${cell(badge(r.status || 'active'))}
-    </tr>`;
+    const src = r.source || 'all';
+    if (!groups[src]) groups[src] = [];
+    groups[src].push(r);
   });
-  document.getElementById('rules-body').innerHTML = html || '<tr><td colspan="8" class="empty">No rules found</td></tr>';
+  
+  let html = '';
+  Object.entries(groups).forEach(([src, rules]) => {
+    html += `<div class="source-section" style="margin-bottom:8px">
+      <div class="source-header ${src !== 'all' ? 'source-' + src : ''}" onclick="toggleSource(this)" style="padding:8px 14px">
+        <span class="arrow">▼</span>
+        <span class="source-name">${src}</span>
+        <span class="source-meta">${rules.length} rules</span>
+      </div>
+      <div class="source-body">
+        <div class="source-table-wrap">
+          <table><thead><tr><th>Target</th><th>Prec</th><th>EV</th><th>Hits</th><th>Total</th><th>Lag</th></tr></thead><tbody>`;
+    rules.slice(0, 30).forEach(r => {
+      html += `<tr>
+        ${cell(r.target)}
+        ${cell(pct(r.precision))}
+        ${cell(r.ev?.toFixed(1))}
+        ${cell(r.hits)}
+        ${cell(r.total)}
+        ${cell('lag=' + r.lag)}
+      </tr>`;
+    });
+    if (rules.length > 30) html += `<tr><td colspan="6" style="color:#667788;text-align:center">...and ${rules.length - 30} more</td></tr>`;
+    html += `</tbody></table></div></div></div>`;
+  });
+  
+  document.getElementById('rules-container').innerHTML = html || '<div class="empty">No rules found</div>';
 }
 
 // ── Init ────────────────────────────────────────────────────────────────────
-loadStats();
 loadPredictions();
-setInterval(loadStats, 30000);
 predTimer = setInterval(loadPredictions, 10000);
 </script>
 </body>
