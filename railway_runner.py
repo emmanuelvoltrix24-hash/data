@@ -129,6 +129,20 @@ def main():
     lt.start()
     print(f"[railway] learner thread started", flush=True)
 
+    # Start prediction engine (delayed 30s to let cookies initialize)
+    def start_engine():
+        time.sleep(30)
+        try:
+            from prediction_engine import main as engine_main
+            print("[railway] prediction engine starting...", flush=True)
+            engine_main()
+        except Exception as e:
+            print(f"[railway] prediction engine crashed: {e}", flush=True)
+            import traceback; traceback.print_exc()
+    pt = threading.Thread(target=start_engine, daemon=True)
+    pt.start()
+    print(f"[railway] prediction engine thread started", flush=True)
+
     # Run Flask in main thread
     print(f"[railway] Starting Flask on :{port}", flush=True)
     app.run(host='0.0.0.0', port=port)

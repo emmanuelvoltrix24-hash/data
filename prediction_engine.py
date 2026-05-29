@@ -1,388 +1,480 @@
 #!/usr/bin/env python3
 """
-VFL Prediction Engine
-Combines M5/M6/M7 parity rules from round N with 1X2 odds + form from round N+1.
+VFL Prediction Engine v2
+Live poller that catches round N results → queries DB rules → predicts round N+1 (all 10 matches).
+Stores predictions for backtesting. No Playwright dependency.
 """
-import requests, json, time, asyncio
+import os, sys, json, time, requests
 from datetime import datetime, timezone, timedelta
-from playwright.async_api import async_playwright
-from autobet import bet_on_predictions
-from auth import ensure_session, load_cookies
+from typing import Optional
 
+# Ensure local module path
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _THIS_DIR not in sys.path:
+    sys.path.insert(0, _THIS_DIR)
+
+# ── Config ─────────────────────────────────────────────────────────────────
 PERIODS_URL = 'https://vl.betkraft.co.uk/periods/1'
 LIVE_URL    = 'https://vl.betkraft.co.uk/live'
-IFRAME_URL  = "https://ug.bandabets.com/iframe?IsDemo=0&providerID=55&gameName=Euro+Virtuals&gameID=550e8400-e29b-41d4-a716-446655440000"
+DATA_URL    = 'https://vl.betkraft.co.uk/data'
+STANDING_URL = 'https://vl.betkraft.co.uk/standing/1/0'
 
-ensure_session()
+COOKIES = {}
+DB_URL = os.environ.get('DATABASE_URL', '')
+POLL_INTERVAL = 3  # seconds between polls
+BET_WINDOW = 180   # seconds before next round closes
 
-def get_cookies():
-    ensure_session()
-    return load_cookies()
-
-
-# ── Rules — DB-backed with hardcoded fallback ─────────────────────────────────
-
-_db_rules_cache = {'rules': None, 'loaded_at': 0}
-
-def load_db_rules():
-    """Load high-confidence rules from global_rules table, cache for 5 min."""
-    import time
-    if time.time() - _db_rules_cache['loaded_at'] < 300 and _db_rules_cache['rules'] is not None:
-        return _db_rules_cache['rules']
+# ── Auth / Cookies ──────────────────────────────────────────────────────────
+def ensure_cookies():
+    global COOKIES
     try:
-        db_url = os.environ.get('DATABASE_URL')
-        if not db_url:
-            return {}
-        import psycopg
-        from psycopg.rows import dict_row
-        with psycopg.connect(db_url, row_factory=dict_row) as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT target, conditions, lag, precision, hits, total
-                    FROM global_rules
-                    WHERE status='active' AND precision >= 0.82
-                    ORDER BY precision DESC, hits DESC
-                    LIMIT 200
-                """)
-                rules = cur.fetchall()
-        _db_rules_cache['rules'] = rules
-        _db_rules_cache['loaded_at'] = time.time()
-        print(f"[rules] Loaded {len(rules)} rules from DB")
-        return rules
-    except Exception as e:
-        print(f"[rules] DB load failed: {e}")
-        return {}
+        from auth import ensure_session, load_cookies
+        ensure_session()
+        COOKIES = load_cookies()
+    except:
+        pass
 
+def cs():
+    """Get current cookies dict."""
+    return COOKIES if COOKIES else {}
 
-def apply_parity_rules(p5, p6, p7, p10_prev):
-    """Apply rules — DB rules first, hardcoded fallback."""
-    pat = (p5, p6, p7)
+# ── API calls ────────────────────────────────────────────────────────────────
+def get_periods():
+    r = requests.get(PERIODS_URL, cookies=cs(), timeout=10)
+    return r.json()['data']['periods']
 
-    # Try DB rules for M10 targets matching current pattern
-    db_rules = load_db_rules()
-    if db_rules:
-        import json
-        for r in db_rules:
-            if r['lag'] != 1: continue
-            conds = r['conditions'] if isinstance(r['conditions'], dict) else json.loads(r['conditions'])
-            # Check if M5/M6/M7 parity conditions match
-            match = all(
-                conds.get(f"M{slot}_parity") == val
-                for slot, val in [(5,p5),(6,p6),(7,p7)]
-                if f"M{slot}_parity" in conds
-            )
-            if not match: continue
-            target = r['target']  # e.g. "M10_outcome=W" or "M10_parity=E"
-            if not target.startswith('M10'): continue
-            prec = r['precision']
-            conf = 'HIGH' if prec >= 0.88 else ('MEDIUM' if prec >= 0.82 else 'LOW')
-            if '=W' in target or '=D' in target:
-                outcome = [target.split('=')[1]]
-                return {'parity': None, 'outcome': outcome, 'confidence': conf,
-                        'rule': f"DB: {list(conds.items())} → {target} ({prec:.0%})"}
-            if '_parity=' in target:
-                par = target.split('=')[1]
-                return {'parity': par, 'outcome': None, 'confidence': conf,
-                        'rule': f"DB: {list(conds.items())} → {target} ({prec:.0%})"}
+def get_live(period: dict) -> Optional[list]:
+    payload = {k: period[k] for k in ('competition_id','end_time','round_number_id','start_time')}
+    r = requests.post(LIVE_URL, cookies=cs(), json=payload, timeout=10)
+    if r.status_code == 200:
+        data = r.json()
+        if data.get('status_code') == 200 and data.get('data'):
+            return data['data'].get('live', [])
+    return None
 
-    # Hardcoded fallback
-    if pat == ('O','O','O'):
-        flip = ('E' if p10_prev=='O' else 'O') if p10_prev else None
-        return {'parity': flip, 'outcome': None, 'confidence': 'HIGH', 'rule': 'O,O,O → M10 parity flips'}
-    if pat == ('E','O','O'):
-        return {'parity': None, 'outcome': ['W','D'], 'confidence': 'HIGH', 'rule': 'E,O,O → M10 no loss'}
-    if pat == ('O','E','E'):
-        return {'parity': 'E', 'outcome': ['W','D'], 'confidence': 'HIGH', 'rule': 'O,E,E → M10 no loss, Even'}
-    if pat == ('O','E','O'):
-        return {'parity': 'E', 'outcome': None, 'confidence': 'MEDIUM', 'rule': 'O,E,O → M10 Even parity'}
-    if pat == ('E','E','O'):
-        return {'parity': p10_prev, 'outcome': None, 'confidence': 'MEDIUM', 'rule': 'E,E,O → M10 parity stable'}
-    if pat == ('E','E','E'):
-        return {'parity': None, 'outcome': None, 'confidence': 'LOW', 'rule': 'E,E,E → neutral'}
-
-    return {'parity': None, 'outcome': None, 'confidence': 'LOW', 'rule': f'{p5},{p6},{p7} → no strong rule'}
-
-
-# ── Standings + Form ─────────────────────────────────────────────────────────
-
-def get_standings():
-    r = requests.get('https://vl.betkraft.co.uk/standing/1/0', cookies=get_cookies(), timeout=10)
+def get_standings() -> dict:
+    r = requests.get(STANDING_URL, cookies=cs(), timeout=10)
     if r.status_code == 200:
         return {s['team_name']: s for s in r.json()['data']['standings']}
     return {}
 
-def form_score(f): return f.count('W')*3 + f.count('D')
+def get_next_odds() -> list:
+    """Fetch /data for next round odds."""
+    r = requests.get(DATA_URL, cookies=cs(), timeout=10)
+    if r.status_code == 200:
+        try:
+            return r.json()['data']['matches']
+        except:
+            pass
+    return []
 
-def form_trend(f):
-    """Recent 3 vs older 3 (positive = improving)."""
-    return form_score(f[:3]) - form_score(f[3:]) if len(f) >= 6 else 0
-
-def streak(f):
-    """Current streak from most recent result."""
-    if not f: return 0, ''
-    cur, count = f[0], 1
-    for c in f[1:]:
-        if c == cur: count += 1
-        else: break
-    return count, cur
-
-def odds_to_prob(odd): return round(1/float(odd)*100, 1)
-
-
-# ── Display ──────────────────────────────────────────────────────────────────
-
-def predict_and_display(prev_round, next_matches, standings):
-    """Apply rules from prev_round to predict next_matches."""
-    if not prev_round or not next_matches:
-        return
-
-    def par(m):
-        t = m['hg'] + m['ag']
-        return None if t==0 else ('E' if t%2==0 else 'O')
-
-    slots = {m['n']: m for m in prev_round['matches']}
-    p5  = par(slots[5])  if 5  in slots else None
-    p6  = par(slots[6])  if 6  in slots else None
-    p7  = par(slots[7])  if 7  in slots else None
-    p10 = par(slots[10]) if 10 in slots else None
-
-    rule = apply_parity_rules(p5, p6, p7, p10)
-
-    ts = datetime.now().strftime('%H:%M:%S')
-    print(f"\n{'='*80}")
-    print(f"[{ts}] PREDICTIONS FOR ROUND #{next_matches[0].get('round_id','?')}")
-    print(f"  Prev pattern (M5,M6,M7) = ({p5},{p6},{p7})  M10_prev={p10}")
-    print(f"  Rule: {rule['rule']}  [{rule['confidence']}]")
-    print(f"{'='*80}")
-    print(f"  {'#':<4} {'Home':<20} {'Away':<20} {'H%':>5} {'D%':>5} {'A%':>5}  {'Odds':^15}  {'Pos':^7} {'Pts':^7} {'Trend':^7}  Signal")
-    print(f"  {'-'*100}")
-
-    for i, m in enumerate(next_matches, 1):
-        odds = m['markets'][0]['outcomes']
-        h_odd, d_odd, a_odd = float(odds[0]['odd_value']), float(odds[1]['odd_value']), float(odds[2]['odd_value'])
-        hp, dp, ap = odds_to_prob(h_odd), odds_to_prob(d_odd), odds_to_prob(a_odd)
-
-        ht, at = m['home_team'], m['away_team']
-        hs = standings.get(ht, {})
-        as_ = standings.get(at, {})
-
-        h_pos   = hs.get('position', '-')
-        a_pos   = as_.get('position', '-')
-        h_pts   = hs.get('points', 0)
-        a_pts   = as_.get('points', 0)
-        h_form  = hs.get('team_form', m.get('htf',''))
-        a_form  = as_.get('team_form', m.get('atf',''))
-
-        pos_diff  = (a_pos - h_pos) if isinstance(h_pos, int) and isinstance(a_pos, int) else 0
-        pts_diff  = h_pts - a_pts
-        h_trend   = form_trend(h_form)
-        a_trend   = form_trend(a_form)
-        h_streak  = streak(h_form)
-        a_streak  = streak(a_form)
-        h_fs      = form_score(h_form)
-        a_fs      = form_score(a_form)
-
-        # Odds favourite
-        odds_fav = 'H' if h_odd < a_odd else 'A'
-        form_fav = 'H' if h_fs > a_fs else ('A' if a_fs > h_fs else 'D')
-        agree    = odds_fav == form_fav
-
-        # Build signal
-        signals = []
-
-        if i == 10 and rule['confidence'] in ('HIGH','MEDIUM'):
-            if rule['outcome']:
-                allowed = rule['outcome']
-                # Pick best outcome among allowed that agrees with odds/form
-                candidates = []
-                if 'W' in allowed: candidates.append(('H', hp, h_odd))
-                if 'D' in allowed: candidates.append(('D', dp, d_odd))
-                best = max(candidates, key=lambda x: x[1]) if candidates else None
-                if best:
-                    signals.append(f"★M10:{best[0]}({rule['confidence']})")
-            elif rule['parity']:
-                signals.append(f"★M10:par={rule['parity']}({rule['confidence']})")
-
-        # Value: form favours team but odds don't
-        if form_fav == 'H' and odds_fav == 'A' and h_odd > 2.5:
-            signals.append(f"VAL:H({h_odd:.2f})")
-        elif form_fav == 'A' and odds_fav == 'H' and a_odd > 2.5:
-            signals.append(f"VAL:A({a_odd:.2f})")
-
-        # Strong form agreement
-        if agree and h_streak[0] >= 3 and h_streak[1] == 'W':
-            signals.append(f"STK:H{h_streak[0]}W")
-        elif agree and a_streak[0] >= 3 and a_streak[1] == 'W':
-            signals.append(f"STK:A{a_streak[0]}W")
-
-        # Position gap
-        if pos_diff >= 8:
-            signals.append(f"POS:H+{pos_diff}")
-        elif pos_diff <= -8:
-            signals.append(f"POS:A+{abs(pos_diff)}")
-
-        pos_str = f"{h_pos}v{a_pos}" if isinstance(h_pos,int) else '-'
-        pts_str = f"{h_pts}v{a_pts}"
-        trend_str = f"{h_trend:+d}/{a_trend:+d}"
-
-        print(f"  {i:<4} {ht:<20} {at:<20} {hp:>5} {dp:>5} {ap:>5}  {h_odd:.2f}/{d_odd:.2f}/{a_odd:.2f}  {pos_str:^7} {pts_str:^7} {trend_str:^7}  {' '.join(signals)}")
-
-    print()
-
-
-# ── Odds fetcher (Playwright) ────────────────────────────────────────────────
-
-async def fetch_odds_async():
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context()
-        with open('bandabets_cookies.json') as f:
-            await context.add_cookies(json.load(f))
-        page = await context.new_page()
-        captured = {}
-        async def on_resp(res):
-            if res.url == 'https://vl.betkraft.co.uk/data':
-                try:
-                    body = await res.text()
-                    captured['matches'] = sorted(
-                        json.loads(body)['data']['matches'],
-                        key=lambda m: m['event_id']
-                    )
-                except: pass
-        context.on('response', on_resp)
-        await page.goto(IFRAME_URL, wait_until='domcontentloaded', timeout=30000)
-        await asyncio.sleep(15)
-        await browser.close()
-        return captured.get('matches', [])
-
-
-# ── Main loop ────────────────────────────────────────────────────────────────
-
-def get_periods():
-    return requests.get(PERIODS_URL, cookies=get_cookies(), timeout=10).json()['data']['periods']
-
-def get_live(period):
-    payload = {k: period[k] for k in ('competition_id','end_time','round_number_id','start_time')}
-    r = requests.post(LIVE_URL, cookies=get_cookies(), json=payload, timeout=10).json()
-    if r.get('status_code') == 200 and r['data']:
-        return r['data'].get('live', [])
-    return None
-
-def to_utc(s):
+def to_utc(s: str) -> datetime:
     return datetime.strptime(s, '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc) - timedelta(hours=3)
 
-def parse_live(live, period):
-    matches = sorted(live, key=lambda m: m['event_id'])
-    parsed = []
-    for i, m in enumerate(matches, 1):
-        hg, ag = map(int, m['result'].split(':'))
-        parsed.append({'n': i, 'home_team': m['home_team'], 'away_team': m['away_team'],
-                       'hg': hg, 'ag': ag, 'result': m['result']})
-    return {'round_id': period['round_number_id'], 'matches': parsed}
+# ── DB Rules Loader ──────────────────────────────────────────────────────────
+_rules_cache = {'rules': None, 'loaded_at': 0}
 
-
-def build_m10_bets(prev_round, next_matches, standings):
-    """Return bet list for M10 based on HIGH confidence parity rule."""
-    if not prev_round or not next_matches:
-        return []
-
-    def par(m):
-        t = m['hg'] + m['ag']
-        return None if t == 0 else ('E' if t % 2 == 0 else 'O')
-
-    slots = {m['n']: m for m in prev_round['matches']}
-    p5  = par(slots[5])  if 5  in slots else None
-    p6  = par(slots[6])  if 6  in slots else None
-    p7  = par(slots[7])  if 7  in slots else None
-    p10 = par(slots[10]) if 10 in slots else None
-    rule = apply_parity_rules(p5, p6, p7, p10)
-
-    if rule['confidence'] != 'HIGH' or not rule['outcome']:
-        return []
-
-    # Find M10 in next_matches
-    m10 = next_matches[9] if len(next_matches) >= 10 else None
-    if not m10:
-        return []
-
-    allowed = rule['outcome']  # ['W', 'D'] or similar
-    odds = m10['markets'][0]['outcomes']
-    h_odd = float(odds[0]['odd_value'])
-    d_odd = float(odds[1]['odd_value'])
-    a_odd = float(odds[2]['odd_value'])
-
-    # Pick best value outcome among allowed
-    candidates = []
-    if 'W' in allowed: candidates.append(('1', h_odd, 'H'))
-    if 'D' in allowed: candidates.append(('X', d_odd, 'D'))
-    if not candidates:
-        return []
-
-    best_oid, best_odd, best_label = max(candidates, key=lambda x: x[1])
-
-    return [{
-        'event_id':   m10['event_id'],
-        'market_id':  '1X2',
-        'outcome_id': best_oid,
-        'match_desc': f"M10: {m10['home_team']} vs {m10['away_team']}",
-        'signal':     f"★{best_label}({rule['rule']}) @{best_odd}",
-    }]
-
-
-print("🔮 VFL Prediction Engine started\n")
-seen = set()
-prev_round = None
-next_odds = []
-
-print("Fetching standings + pre-round odds...")
-standings = get_standings()
-next_odds = asyncio.run(fetch_odds_async())
-if next_odds:
-    print(f"✓ Odds: {len(next_odds)} matches | Standings: {len(standings)} teams\n")
-
-while True:
+def load_rules(min_prec: float = 0.75, min_total: int = 50, max_rules: int = 5000):
+    """Load high-confidence rules from global_rules, cached for 5 min."""
+    import time as t
+    now = t.time()
+    if now - _rules_cache['loaded_at'] < 300 and _rules_cache['rules'] is not None:
+        return _rules_cache['rules']
     try:
-        periods = get_periods()
-        now = datetime.now(timezone.utc)
-
-        for period in periods:
-            rid = period['round_number_id']
-            if rid in seen:
-                continue
-
-            start = to_utc(period['start_time'])
-            wait = (start - now).total_seconds()
-
-            if wait > 0:
-                print(f"⏳ Round #{rid} in {wait:.0f}s — showing predictions now...")
-                if prev_round and next_odds:
-                    predict_and_display(prev_round, next_odds, standings)
-                    # Build bets for HIGH confidence M10 signals
-                    bets = build_m10_bets(prev_round, next_odds, standings)
-                    if bets:
-                        asyncio.run(bet_on_predictions(bets))
-                time.sleep(max(0, wait))
-
-            for _ in range(10):
-                live = get_live(period)
-                if live and len(live) == 10:
-                    seen.add(rid)
-                    prev_round = parse_live(live, period)
-                    ts = datetime.now().strftime('%H:%M:%S')
-                    print(f"\n[{ts}] ✅ RESULTS #{rid}")
-                    for m in prev_round['matches']:
-                        t = m['hg']+m['ag']
-                        par = None if t==0 else ('E' if t%2==0 else 'O')
-                        print(f"  M{m['n']}: {m['home_team']} vs {m['away_team']} {m['result']} ({par or '-'})")
-                    print("\nFetching next round odds + standings...")
-                    standings = get_standings()
-                    next_odds = asyncio.run(fetch_odds_async())
-                    break
-                time.sleep(2)
-            else:
-                seen.add(rid)
-            break
-
+        import psycopg
+        from psycopg.rows import dict_row
+        with psycopg.connect(DB_URL, row_factory=dict_row) as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT target, conditions::text, lag, precision, hits, total, source
+                    FROM global_rules
+                    WHERE status='active' AND precision >= %s AND total >= %s
+                    ORDER BY (precision * hits * LOG(total+1)) DESC
+                    LIMIT %s
+                """, (min_prec, min_total, max_rules))
+                rules = cur.fetchall()
+        for r in rules:
+            r['conditions'] = json.loads(r['conditions'])
+        _rules_cache['rules'] = rules
+        _rules_cache['loaded_at'] = t.time()
+        return rules
     except Exception as e:
-        print(f"Error: {e}")
-    time.sleep(5)
+        return []
+
+# ── Feature extraction ──────────────────────────────────────────────────────
+def parity(total: int) -> Optional[str]:
+    return None if total == 0 else ('E' if total % 2 == 0 else 'O')
+
+def bucket_odds(odd: float) -> str:
+    if odd >= 6.0: return 'vhigh'
+    if odd >= 3.5: return 'high'
+    if odd >= 2.2: return 'med'
+    if odd >= 1.6: return 'low'
+    return 'vlow'
+
+def bucket_prob(prob: float) -> str:
+    if prob >= 60: return '60+'
+    if prob >= 50: return '50-60'
+    if prob >= 40: return '40-50'
+    if prob >= 30: return '30-40'
+    return '<30'
+
+def extract_features(matches: list, standings: dict) -> dict:
+    """Extract all features from a completed round's matches."""
+    feat = {}
+    for m in matches:
+        n = m['n']
+        hg = int(m.get('hg', 0))
+        ag = int(m.get('ag', 0))
+        total = hg + ag
+        ht = m.get('home_team', '')
+        at = m.get('away_team', '')
+        
+        # Basic
+        feat[f'M{n}_hg'] = hg
+        feat[f'M{n}_ag'] = ag
+        feat[f'M{n}_total'] = total
+        feat[f'M{n}_parity'] = parity(total)
+        feat[f'M{n}_outcome'] = 'W' if hg > ag else ('L' if hg < ag else 'D')
+        feat[f'M{n}_cs'] = (hg == 0 or ag == 0)
+        feat[f'M{n}_both_score'] = (hg > 0 and ag > 0)
+        feat[f'M{n}_result'] = f"{hg}:{ag}"
+        
+        # Half-time (if available)
+        ht_hg = m.get('ht_hg')
+        ht_ag = m.get('ht_ag')
+        if ht_hg is not None and ht_ag is not None:
+            ht_total = int(ht_hg) + int(ht_ag)
+            feat[f'M{n}_ht_parity'] = parity(ht_total)
+            feat[f'M{n}_ht_outcome'] = 'W' if int(ht_hg) > int(ht_ag) else ('L' if int(ht_hg) < int(ht_ag) else 'D')
+            feat[f'M{n}_ht_hg'] = int(ht_hg)
+            feat[f'M{n}_ht_ag'] = int(ht_ag)
+        
+        # Odds-based features (from match's markets)
+        markets = m.get('markets', [])
+        if markets:
+            outcomes = markets[0].get('outcomes', [])
+            if len(outcomes) >= 3:
+                h_odd = float(outcomes[0].get('odd_value', 1))
+                d_odd = float(outcomes[1].get('odd_value', 1))
+                a_odd = float(outcomes[2].get('odd_value', 1))
+                h_prob = 1/h_odd * 100
+                a_prob = 1/a_odd * 100
+                feat[f'M{n}_h_odd'] = h_odd
+                feat[f'M{n}_d_odd'] = d_odd
+                feat[f'M{n}_a_odd'] = a_odd
+                feat[f'M{n}_h_prob'] = round(h_prob, 1)
+                feat[f'M{n}_a_prob'] = round(a_prob, 1)
+                feat[f'M{n}_prob_diff'] = round(h_prob - a_prob, 1)
+                feat[f'M{n}_h_odd_bucket'] = bucket_odds(h_odd)
+                feat[f'M{n}_a_odd_bucket'] = bucket_odds(a_odd)
+                feat[f'M{n}_h_prob_bucket'] = bucket_prob(h_prob)
+                feat[f'M{n}_a_prob_bucket'] = bucket_prob(a_prob)
+                feat[f'M{n}_odds_fav'] = 'H' if h_odd < a_odd else 'A'
+        
+        # Standings-based features
+        hs = standings.get(ht, {})
+        as_ = standings.get(at, {})
+        h_pos = hs.get('position')
+        a_pos = as_.get('position')
+        h_pts = hs.get('points', 0)
+        a_pts = as_.get('points', 0)
+        h_form = hs.get('team_form', '')
+        a_form = as_.get('team_form', '')
+        
+        if h_pos is not None and a_pos is not None:
+            pos_diff = a_pos - h_pos
+            feat[f'M{n}_pos_diff'] = pos_diff
+            if pos_diff >= 8: feat[f'M{n}_pos_diff_bucket'] = 'H++'
+            elif pos_diff >= 4: feat[f'M{n}_pos_diff_bucket'] = 'H+'
+            elif pos_diff >= -3: feat[f'M{n}_pos_diff_bucket'] = 'even'
+            elif pos_diff >= -7: feat[f'M{n}_pos_diff_bucket'] = 'A+'
+            else: feat[f'M{n}_pos_diff_bucket'] = 'A++'
+        
+        pts_diff = h_pts - a_pts
+        feat[f'M{n}_pts_diff'] = pts_diff
+        if pts_diff >= 15: feat[f'M{n}_pts_diff_bucket'] = 'H++'
+        elif pts_diff >= 8: feat[f'M{n}_pts_diff_bucket'] = 'H+'
+        elif pts_diff >= -7: feat[f'M{n}_pts_diff_bucket'] = 'even'
+        elif pts_diff >= -14: feat[f'M{n}_pts_diff_bucket'] = 'A+'
+        else: feat[f'M{n}_pts_diff_bucket'] = 'A++'
+        
+        # Form
+        h_fs = h_form.count('W')*3 + h_form.count('D')
+        a_fs = a_form.count('W')*3 + a_form.count('D')
+        form_diff = h_fs - a_fs
+        feat[f'M{n}_form'] = h_form[:6]
+        feat[f'M{n}_a_form'] = a_form[:6]
+        if form_diff >= 5: feat[f'M{n}_form_diff'] = 'H++'
+        elif form_diff >= 2: feat[f'M{n}_form_diff'] = 'H+'
+        elif form_diff >= -1: feat[f'M{n}_form_diff'] = 'even'
+        elif form_diff >= -4: feat[f'M{n}_form_diff'] = 'A+'
+        else: feat[f'M{n}_form_diff'] = 'A++'
+        
+        # Form trends
+        if len(h_form) >= 6:
+            h_recent = h_form[:3].count('W')*3 + h_form[:3].count('D')
+            h_older = h_form[3:6].count('W')*3 + h_form[3:6].count('D')
+            feat[f'M{n}_h_trend'] = 'up' if h_recent > h_older else ('down' if h_recent < h_older else 'flat')
+        if len(a_form) >= 6:
+            a_recent = a_form[:3].count('W')*3 + a_form[:3].count('D')
+            a_older = a_form[3:6].count('W')*3 + a_form[3:6].count('D')
+            feat[f'M{n}_a_trend'] = 'up' if a_recent > a_older else ('down' if a_recent < a_older else 'flat')
+    
+    # Round-level features
+    outcomes = [feat.get(f'M{n}_outcome') for n in range(1, 11)]
+    parities = [feat.get(f'M{n}_parity') for n in range(1, 11)]
+    feat['R_home_wins'] = outcomes.count('W')
+    feat['R_draws'] = outcomes.count('D')
+    feat['R_away_wins'] = outcomes.count('L')
+    feat['R_total_parity'] = 'O' if parities.count('O') > parities.count('E') else 'E'
+    feat['R_cs'] = sum(1 for n in range(1, 11) if feat.get(f'M{n}_cs'))
+    feat['R_both_score'] = sum(1 for n in range(1, 11) if feat.get(f'M{n}_both_score'))
+    feat['R_source'] = 'betkraft'
+    
+    return feat
+
+# ── Rule matching ───────────────────────────────────────────────────────────
+def match_rule(rule: dict, features: dict) -> bool:
+    """Check if a rule's conditions match the extracted features."""
+    conds = rule['conditions']
+    for k, v in conds.items():
+        fv = features.get(k)
+        if fv is None:
+            return False
+        # Convert to string for comparison
+        if str(fv) != str(v):
+            return False
+    return True
+
+def predict_round(prev_features: dict, next_matches: list, standings: dict, rules: list) -> list:
+    """
+    Predict all 10 matches of next round using DB rules.
+    Returns list of predictions.
+    """
+    predictions = []
+    
+    # Group rules by target slot (M1-M10)
+    slot_rules = {}
+    for r in rules:
+        target = r['target']
+        for s in [f'M{n}_' for n in range(1, 11)]:
+            if target.startswith(s):
+                slot = s.rstrip('_')
+                if slot not in slot_rules:
+                    slot_rules[slot] = []
+                slot_rules[slot].append(r)
+                break
+    
+    for i, m in enumerate(next_matches, 1):
+        slot = f'M{i}'
+        pred = {
+            'slot': slot,
+            'home': m.get('home_team', '?'),
+            'away': m.get('away_team', '?'),
+            'event_id': m.get('event_id'),
+            'predictions': [],
+            'best_outcome': None,
+            'best_parity': None,
+            'confidence': 'LOW',
+            'signal': '',
+        }
+        
+        # Get odds for this match
+        markets = m.get('markets', [])
+        h_odd = d_odd = a_odd = None
+        if markets and len(markets[0].get('outcomes', [])) >= 3:
+            outcomes = markets[0]['outcomes']
+            h_odd = float(outcomes[0].get('odd_value', 1))
+            d_odd = float(outcomes[1].get('odd_value', 1))
+            a_odd = float(outcomes[2].get('odd_value', 1))
+        
+        # Match rules for this slot
+        matched = []
+        for r in slot_rules.get(slot, []):
+            if r['lag'] == 1 and match_rule(r, prev_features):
+                matched.append(r)
+        
+        # Also check lag=2 and lag=3 rules if no lag=1 match
+        if not matched:
+            for r in slot_rules.get(slot, []):
+                if r['lag'] in (2, 3) and match_rule(r, prev_features):
+                    matched.append(r)
+        
+        if matched:
+            # Sort by EV descending
+            matched.sort(key=lambda x: x['precision'] * x['hits'] * (x['total'] ** 0.5), reverse=True)
+            best = matched[0]
+            target = best['target']
+            prec = best['precision']
+            
+            # Extract outcome/parity from target
+            if '_outcome=' in target or '_parity=' in target:
+                parts = target.split('=')
+                pred_type = parts[0].split('_')[-1]  # 'outcome' or 'parity'
+                pred_val = parts[1]
+                
+                if pred_type == 'outcome':
+                    pred['best_outcome'] = pred_val
+                    pred['confidence'] = 'HIGH' if prec >= 0.80 else ('MEDIUM' if prec >= 0.75 else 'LOW')
+                    pred['signal'] = f"★{pred_val}({prec:.0%}/{best['hits']}/{best['total']})"
+                elif pred_type == 'parity':
+                    pred['best_parity'] = pred_val
+                    pred['confidence'] = 'HIGH' if prec >= 0.80 else ('MEDIUM' if prec >= 0.75 else 'LOW')
+                    pred['signal'] = f"★PAR={pred_val}({prec:.0%}/{best['hits']}/{best['total']})"
+                
+                pred['predictions'].append({
+                    'rule': f"{json.dumps(best['conditions'])} → {target}",
+                    'precision': prec,
+                    'hits': best['hits'],
+                    'total': best['total'],
+                    'lag': best['lag'],
+                    'source': best.get('source', 'all'),
+                })
+        
+        # Add odds-based default if no rule matched
+        if not pred['best_outcome'] and not pred['best_parity']:
+            if h_odd and a_odd:
+                fav = 'H' if h_odd < a_odd else 'A'
+                pred['best_outcome'] = fav
+                pred['confidence'] = 'LOW'
+                pred['signal'] = f"ODDS:{fav}(@min{h_odd if fav=='H' else a_odd:.2f})"
+        
+        predictions.append(pred)
+    
+    return predictions
+
+# ── Display ─────────────────────────────────────────────────────────────────
+def display_round(rid: int, prev_features: dict, next_matches: list, predictions: list):
+    ts = datetime.now().strftime('%H:%M:%S')
+    print(f"\n{'='*90}")
+    print(f" [{ts}] ROUND #{rid} RESULTS + NEXT ROUND PREDICTIONS")
+    print(f"{'='*90}")
+    
+    # Show results of previous round
+    print(f"\n  ── ROUND #{rid} RESULTS ──")
+    for n in range(1, 11):
+        res = prev_features.get(f'M{n}_result', '?-?')
+        ht = prev_features.get(f'M{n}_home_team', '?')
+        at = prev_features.get(f'M{n}_away_team', '?')
+        par = prev_features.get(f'M{n}_parity', '-')
+        outcome = prev_features.get(f'M{n}_outcome', '-')
+        cs = '✓' if prev_features.get(f'M{n}_cs') else '✗'
+        print(f"    M{n}: {ht:<20} vs {at:<20} {res:>5}  par={par}  outcome={outcome}  cs={cs}")
+    
+    # Round-level stats
+    print(f"  ── ROUND FEATURES ──")
+    print(f"    Home wins: {prev_features.get('R_home_wins')}  Draws: {prev_features.get('R_draws')}  "
+          f"CS: {prev_features.get('R_cs')}  Both: {prev_features.get('R_both_score')}  "
+          f"Total par: {prev_features.get('R_total_parity')}")
+    
+    # Show predictions for next round
+    print(f"\n  ── NEXT ROUND PREDICTIONS ──")
+    print(f"  {'#':<3} {'Home':<22} {'Away':<22} {'Odds':<16} {'Signal':<30} {'Conf':<8}")
+    print(f"  {'-'*95}")
+    
+    for i, pred in enumerate(predictions, 1):
+        # Get odds display
+        m = next_matches[i-1] if i-1 < len(next_matches) else {}
+        markets = m.get('markets', [])
+        odds_str = '-'
+        if markets and len(markets[0].get('outcomes', [])) >= 3:
+            outcomes = markets[0]['outcomes']
+            odds_str = f"{float(outcomes[0]['odd_value']):.2f}/{float(outcomes[1]['odd_value']):.2f}/{float(outcomes[2]['odd_value']):.2f}"
+        
+        ht = pred['home']
+        at = pred['away']
+        signal = pred['signal']
+        conf = pred['confidence']
+        print(f"  M{i:<2} {ht:<22} {at:<22} {odds_str:<16} {signal:<30} {conf:<8}")
+    
+    print(f"\n{'='*90}\n")
+
+# ── Main loop ────────────────────────────────────────────────────────────────
+def main():
+    print("🔮 VFL Prediction Engine v2")
+    print("   Polling betkraft for live rounds + predicting next round\n")
+    
+    ensure_cookies()
+    seen = set()
+    prev_features = None
+    next_odds = []
+    standings = {}
+    cycle = 0
+    
+    while True:
+        try:
+            # Re-auth if needed
+            if cycle % 20 == 0 and cycle > 0:
+                ensure_cookies()
+            
+            periods = get_periods()
+            now = datetime.now(timezone.utc)
+            
+            for period in periods:
+                rid = period['round_number_id']
+                if rid in seen:
+                    continue
+                
+                start = to_utc(period['start_time'])
+                wait = (start - now).total_seconds()
+                
+                # If round is in the future, show predictions first
+                if wait > 0:
+                    if prev_features and next_odds:
+                        rules = load_rules()
+                        predictions = predict_round(prev_features, next_odds, standings, rules)
+                        display_round(last_rid, prev_features, next_odds, predictions)
+                    print(f"  ⏳ Round #{rid} starts in {wait:.0f}s...")
+                    time.sleep(min(wait + 2, BET_WINDOW))
+                
+                # Poll for results
+                for attempt in range(15):
+                    live = get_live(period)
+                    if live and len(live) == 10:
+                        seen.add(rid)
+                        last_rid = rid
+                        
+                        # Parse and extract features
+                        matches = sorted(live, key=lambda m: m['event_id'])
+                        standings = get_standings()
+                        
+                        prev_features = extract_features(matches, standings)
+                        
+                        # Store home/away names in features for display
+                        for m in matches:
+                            n = m['event_id']  # N is position, not event_id
+                        for i, m in enumerate(matches, 1):
+                            prev_features[f'M{i}_home_team'] = m['home_team']
+                            prev_features[f'M{i}_away_team'] = m['away_team']
+                        
+                        # Fetch next round odds
+                        next_odds = get_next_odds()
+                        if next_odds:
+                            # Sort by event_id
+                            next_odds.sort(key=lambda x: x['event_id'])
+                        
+                        # Display results + predictions together
+                        rules = load_rules()
+                        predictions = predict_round(prev_features, next_odds, standings, rules)
+                        display_round(rid, prev_features, next_odds, predictions)
+                        
+                        print(f"  ⏳ Waiting for next round...\n")
+                        break
+                    time.sleep(2)
+                else:
+                    seen.add(rid)
+                break  # Only process one period per cycle
+            
+            cycle += 1
+            time.sleep(POLL_INTERVAL)
+            
+        except KeyboardInterrupt:
+            print("\n🛑 Stopped")
+            break
+        except Exception as e:
+            print(f"\n⚠️ Error: {e}")
+            time.sleep(10)
+
+if __name__ == '__main__':
+    main()
