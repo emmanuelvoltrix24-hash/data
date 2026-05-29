@@ -26,8 +26,8 @@ def run_forever(name, module_name, collect_func_name='collect'):
             time.sleep(10)
 
 def learner_loop():
-    import psycopg
-    from psycopg.rows import dict_row
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
     from global_learner import build_fvecs, mine_rules, save_rules, init_tables, load_previous_rules
     init_tables()
     while True:
@@ -37,8 +37,8 @@ def learner_loop():
             all_rounds = []
             for src, limit in [('bongobongo', 300), ('betkraft', 300), ('bangbet', 800)]:
                 try:
-                    conn = psycopg.connect(os.environ.get('DATABASE_URL', ''), row_factory=dict_row)
-                    cur = conn.cursor()
+                    conn = psycopg2.connect(os.environ.get('DATABASE_URL', ''))
+                    cur = conn.cursor(cursor_factory=RealDictCursor)
                     cur.execute("SELECT data, source FROM rounds WHERE source=%s ORDER BY round_id DESC LIMIT %s", (src, limit))
                     rows = cur.fetchall()
                     conn.close()
@@ -237,3 +237,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
