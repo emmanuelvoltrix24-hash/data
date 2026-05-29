@@ -298,7 +298,7 @@ def collect():
                         p7  = slots[7]['parity']  if 7  in slots else '?'
                         p10 = slots[10]['parity'] if 10 in slots else '?'
                         ts = datetime.now().strftime('%H:%M:%S')
-                        has_o = '\u2713 odds' if round_data['has_odds'] else '\u2717'
+                        has_o = '\u2713 odds' if has_odds else '\u2717'
                         print(f"[{ts}] \u2705 #{rid} ({p5},{p6},{p7}) M10={p10} {has_o}", flush=True)
 
                         # Pre-fetch next round odds

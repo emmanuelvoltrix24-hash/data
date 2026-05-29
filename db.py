@@ -91,7 +91,7 @@ def save_round(round_id, source, league, matches, standings=None, extra=None):
     standings: list of dicts (optional)
     extra: any additional fields to store in data JSONB
     """
-    has_odds     = any(m.get('odds') for m in matches)
+    has_odds     = any(m.get('odds') or m.get('pre_markets') for m in matches)
     has_standings = bool(standings)
     has_ht       = any(m.get('ht') for m in matches)
 
@@ -119,20 +119,36 @@ def save_round(round_id, source, league, matches, standings=None, extra=None):
             """, (str(round_id), source, league, datetime.now(),
                   has_odds, has_standings, has_ht, json.dumps(data)))
 
-            # Write odds comparison rows
+            # Write odds comparison rows — handle multiple formats
             for m in matches:
+                # Normalize team name keys
+                home_team = m.get('home_team') or m.get('home') or ''
+                away_team = m.get('away_team') or m.get('away') or ''
+
+                h = d = a = None
                 odds = m.get('odds', {})
-                x2 = odds.get('1x2') or odds.get('1X2') or {}
-                h = x2.get('1') or x2.get('H')
-                d = x2.get('X') or x2.get('D')
-                a = x2.get('2') or x2.get('A')
+                if odds:
+                    x2 = odds.get('1x2') or odds.get('1X2') or {}
+                    h = x2.get('1') or x2.get('H')
+                    d = x2.get('X') or x2.get('D')
+                    a = x2.get('2') or x2.get('A')
+
+                # Also check pre_markets format (betkraft)
+                if not (h and d and a):
+                    pm = m.get('pre_markets', {})
+                    x2 = pm.get('1X2') or pm.get('1x2') or []
+                    if len(x2) >= 3:
+                        h = x2[0].get('odd_value') if isinstance(x2[0], dict) else None
+                        d = x2[1].get('odd_value') if isinstance(x2[1], dict) else None
+                        a = x2[2].get('odd_value') if isinstance(x2[2], dict) else None
+
                 if h and d and a:
                     cur.execute("""
                         INSERT INTO odds_comparison
                         (round_id, match_n, home_team, away_team, source, h_odd, d_odd, a_odd, collected_at)
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (round_id, match_n, source) DO NOTHING
-                    """, (str(round_id), m['n'], m.get('home',''), m.get('away',''),
+                    """, (str(round_id), m['n'], home_team, away_team,
                           source, float(h), float(d), float(a), datetime.now()))
         conn.commit()
 

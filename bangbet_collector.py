@@ -30,6 +30,34 @@ except Exception:
     def pg_save_round(*a, **kw): pass
 
 _seen_keys = set()
+_pending_odds = {}  # (t_id, st) -> odds_by_team  (proactive cache for upcoming rounds)
+
+def fetch_round_odds(t_id):
+    """Fetch odds from match/list for upcoming round and parse into lookup by team name."""
+    ml = fetch(MATCH_LIST_URL, {
+        'producer': 6, 'sportId': 'sr:sport:1',
+        'tournamentId': t_id, 'country': 'ug',
+    })
+    if not ml or not ml.get('data', {}).get('data'):
+        return {}
+    odds_by_team = {}
+    for om in ml['data']['data']:
+        ht_name = om.get('homeTeamName', '')
+        at_name = om.get('awayTeamName', '')
+        match_name = f"{ht_name} vs. {at_name}"
+        ml2 = om.get('marketList', [])
+        if ml2 and ml2[0].get('markets'):
+            outcomes = ml2[0]['markets'][0].get('outcomes', [])
+            if len(outcomes) >= 3:
+                h_od = outcomes[0].get('odds')
+                d_od = outcomes[1].get('odds')
+                a_od = outcomes[2].get('odds')
+                if h_od and d_od and a_od:
+                    od = {'1': float(h_od), 'X': float(d_od), '2': float(a_od)}
+                    odds_by_team[ht_name] = od
+                    odds_by_team[at_name] = od
+                    odds_by_team[match_name] = od
+    return odds_by_team
 
 def fetch(url, payload=None):
     for _ in range(3):
@@ -93,6 +121,17 @@ def collect():
                 # Get schedule
                 md = fetch(MATCHDAY_URL, {'producer': 6, 'tournamentId': t_id, 'country': 'ug'})
                 if not md or not md.get('data'): continue
+
+                # Pre-fetch odds for upcoming rounds (status=1) proactively
+                for rd in md['data']:
+                    if rd.get('status') == 1:  # upcoming — fetch odds now, cache for later
+                        st = rd.get('scheduleDate')
+                        cache_key = (t_id, st)
+                        if cache_key not in _pending_odds:
+                            odds = fetch_round_odds(t_id)
+                            if odds:
+                                _pending_odds[cache_key] = odds
+                                print(f"  → cached odds for upcoming round #{rd.get('number')} @ {st}", flush=True)
 
                 for rd in md['data']:
                     st = rd.get('scheduleDate')
@@ -160,7 +199,13 @@ def collect():
                     except Exception as e:
                         print(f"  [sqldb] DB write skipped: {e}", flush=True)
 
-                    # Write to Postgres (unified)
+                    # Use cached odds (pre-fetched when round was upcoming)
+                    cache_key = (t_id, st)
+                    odds_by_team = _pending_odds.pop(cache_key, {})
+                    if odds_by_team:
+                        print(f"  → matched cached odds ({len(odds_by_team)} entries)", flush=True)
+
+                    # Write to Postgres (unified) with odds
                     try:
                         pg_matches = []
                         for i, m in enumerate(matches, 1):
@@ -170,12 +215,15 @@ def collect():
                             ht = m.get('ht', m.get('periods', [{}])[0] if m.get('periods') else '')
                             if isinstance(ht, dict):
                                 ht = f"{ht.get('homeScore','?')}:{ht.get('awayScore','?')}"
+                            # Look up odds for this match
+                            match_odds = odds_by_team.get(m['home']) or odds_by_team.get(m['away']) or odds_by_team.get(f"{m['home']} vs. {m['away']}", {})
                             pg_matches.append({
                                 'n': i, 'home': m['home'], 'away': m['away'],
                                 'hg': hg, 'ag': ag, 'result': score,
                                 'outcome': m.get('outcome', 'W' if hg > ag else ('D' if hg == ag else 'L')),
                                 'parity': m.get('parity', 'E' if (hg+ag) % 2 == 0 else 'O'),
                                 'ht': ht,
+                                'odds': {'1x2': match_odds} if match_odds else {},
                             })
                         pg_standings = [{'pos': s['pos'], 'team': s['team'], 'points': s.get('pts', s.get('points')),
                             'played': s['played'], 'w': s.get('w', s.get('wins')),
@@ -184,20 +232,6 @@ def collect():
                         pg_save_round(str(st), 'bangbet', t_name, pg_matches, pg_standings)
                     except Exception as e:
                         print(f"  [pg] write skipped: {e}", flush=True)
-
-                    # Also try to get odds from match/list
-                    try:
-                        ml = fetch(MATCH_LIST_URL, {
-                            'producer': 6, 'sportId': 'sr:sport:1',
-                            'tournamentId': t_id, 'country': 'ug',
-                        })
-                        if ml and ml.get('data', {}).get('data'):
-                            odds_data = ml['data']['data']
-                            odds_fn = fn.replace('.json', '_odds.json')
-                            with open(odds_fn, 'w') as f:
-                                json.dump({'tournament': t_name, 'schedule_time': st,
-                                           'matches_with_odds': odds_data, 'source': 'bangbet'}, f, indent=2)
-                            print(f"  → odds saved: {odds_fn}", flush=True)
                     except:
                         pass
 

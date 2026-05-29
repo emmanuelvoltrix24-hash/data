@@ -186,9 +186,16 @@ def save_to_json(upcoming, results, standings):
 
         # Write to Postgres (unified)
         try:
+            # Merge upcoming odds into results by match number
+            odds_by_n = {}
+            if upcoming:
+                for um in upcoming['matches']:
+                    if um.get('odds'):
+                        odds_by_n[um['n']] = {'1x2': {'1': um['odds']['H'], 'X': um['odds']['D'], '2': um['odds']['A']}}
             pg_matches = [{'n': m['n'], 'home': m['home'], 'away': m['away'],
                            'hg': m['hg'], 'ag': m['ag'], 'result': m['score'],
-                           'outcome': m['outcome'], 'parity': m['parity']} for m in results['matches']]
+                           'outcome': m['outcome'], 'parity': m['parity'],
+                           'odds': odds_by_n.get(m['n'], {})} for m in results['matches']]
             pg_standings = [{'pos': s['pos'], 'team': s['team'], 'points': s['points'],
                              'played': s['played'], 'w': s['w'], 'd': s['d'], 'l': s['l'],
                              'gf': s['gf'], 'ga': s['ga'], 'gd': s['gd']} for s in standings]
