@@ -46,15 +46,32 @@ def fetch_json(url):
     return None
 
 def get_ft_score(r):
+    """Return (home_goals, away_goals) only if match has actually finished.
+    The API pre-populates FULL_TIME_EXCLUDING_OVERTIME=0 before match starts,
+    so we check display.minute >= 90 OR non-zero score to confirm real result."""
     if not r or not r.get('participantPeriodResults'):
         return None, None
+
+    display = r.get('display', {})
+    minute = display.get('minute')
+
     s = {}
     for ppr in r['participantPeriodResults']:
         pt = ppr['participant']['type']
         for pr in ppr['periodResults']:
             if pr['period']['slug'] == 'FULL_TIME_EXCLUDING_OVERTIME':
                 s[pt] = int(pr['result'])
-    return s.get('HOME'), s.get('AWAY')
+    home, away = s.get('HOME'), s.get('AWAY')
+    if home is None:
+        return None, None
+
+    # Only accept as finished if match display shows 90+ or score is non-zero
+    if minute and minute.isdigit() and int(minute) >= 90:
+        return home, away
+    if home > 0 or away > 0:
+        return home, away
+    # No display data or minute < 90 with 0-0 = placeholder or in-play
+    return None, None
 
 def extract_markets(e):
     odds = {'1x2': {}, 'btts': {}, 'dc': {}, 'ou': [], 'htft': {}}
