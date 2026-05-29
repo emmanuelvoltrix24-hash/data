@@ -220,6 +220,67 @@ def audit_summary():
     for r in cur.fetchall():
         print(f"  {r[0]:<30} {r[1]:>3} checks  {r[2]:>3} correct  {r[3]:>6}%")
     
+    # Best markets per source (most accurate prediction types per source)
+    cur.execute("""
+        SELECT 
+            source,
+            pred_type,
+            COUNT(*) as total,
+            SUM(CASE WHEN was_correct THEN 1 ELSE 0 END) as correct,
+            ROUND(100.0 * SUM(CASE WHEN was_correct THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 1) as accuracy_pct
+        FROM audit_log
+        GROUP BY source, pred_type
+        HAVING COUNT(*) >= 3
+        ORDER BY source, accuracy_pct DESC
+    """)
+    best_markets = {}
+    for r in cur.fetchall():
+        src = r[0]
+        if src not in best_markets:
+            best_markets[src] = []
+        best_markets[src].append({
+            'market': r[1],
+            'total': r[2],
+            'correct': r[3],
+            'accuracy': r[4],
+        })
+    
+    print("\n=== BEST MARKETS PER SOURCE ===")
+    for src, markets in best_markets.items():
+        print(f"  {src}:")
+        for m in markets[:5]:
+            print(f"    {m['market']:<10} {m['total']:>4} checks  {m['correct']:>4} correct  {m['accuracy']:>6}%")
+    
+    # Source ranking by accuracy
+    cur.execute("""
+        SELECT source,
+               COUNT(*) as total,
+               SUM(CASE WHEN was_correct THEN 1 ELSE 0 END) as correct,
+               ROUND(100.0 * SUM(CASE WHEN was_correct THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 1) as accuracy_pct
+        FROM audit_log
+        GROUP BY source
+        HAVING COUNT(*) >= 3
+        ORDER BY accuracy_pct DESC
+    """)
+    print("\n=== SOURCE RANKING ===")
+    for r in cur.fetchall():
+        print(f"  {r[0]:<12} {r[1]:>4} checks  {r[2]:>4} correct  {r[3]:>6}%")
+    
+    # Slot ranking by accuracy
+    cur.execute("""
+        SELECT slot,
+               COUNT(*) as total,
+               SUM(CASE WHEN was_correct THEN 1 ELSE 0 END) as correct,
+               ROUND(100.0 * SUM(CASE WHEN was_correct THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 1) as accuracy_pct
+        FROM audit_log
+        GROUP BY slot
+        HAVING COUNT(*) >= 3
+        ORDER BY accuracy_pct DESC
+    """)
+    print("\n=== SLOT RANKING ===")
+    for r in cur.fetchall():
+        print(f"  {r[0]:<5} {r[1]:>4} checks  {r[2]:>4} correct  {r[3]:>6}%")
+    
     cur.execute("SELECT COUNT(*) FROM audit_log")
     total = cur.fetchone()[0]
     cur.execute("SELECT COUNT(*) FROM predictions")
@@ -236,6 +297,7 @@ def audit_summary():
         'total_audited': total,
         'total_correct': correct,
         'accuracy_pct': round(100*correct/max(total,1), 1) if total else 0,
+        'best_markets_per_source': best_markets,
     }
 
 def main():
