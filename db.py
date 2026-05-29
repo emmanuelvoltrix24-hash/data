@@ -5,19 +5,19 @@ All collectors import save_round() and save_odds_snapshot() from here.
 """
 import os, json
 from datetime import datetime
-import psycopg
-from psycopg.rows import dict_row
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
 DATABASE_URL = os.environ.get('DATABASE_URL', '')
 
 
 def get_db():
-    return psycopg.connect(DATABASE_URL, row_factory=dict_row)
+    return psycopg2.connect(DATABASE_URL)
 
 
 def init_db():
     with get_db() as conn:
-        with conn.cursor() as cur:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Main rounds table — one row per (source, round_id)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS rounds (
@@ -106,7 +106,7 @@ def save_round(round_id, source, league, matches, standings=None, extra=None):
     }
 
     with get_db() as conn:
-        with conn.cursor() as cur:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("""
                 INSERT INTO rounds (round_id, source, league, collected_at, has_odds, has_standings, has_ht, data)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
@@ -156,7 +156,7 @@ def save_round(round_id, source, league, matches, standings=None, extra=None):
 def get_seen_ids(source):
     """Return set of already-collected round_ids for a given source."""
     with get_db() as conn:
-        with conn.cursor() as cur:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("SELECT round_id FROM rounds WHERE source = %s", (source,))
             return {r['round_id'] for r in cur.fetchall()}
 
@@ -164,3 +164,4 @@ def get_seen_ids(source):
 if __name__ == '__main__':
     init_db()
     print("Schema ready")
+
