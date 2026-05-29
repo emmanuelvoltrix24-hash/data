@@ -237,10 +237,12 @@ def predict_round(features, rules):
             # Determine confidence
             if prec >= 0.80 and total >= 50:
                 conf = 'HIGH'
-            elif prec >= 0.75 and total >= 30:
+            elif prec >= 0.70 and total >= 30:
                 conf = 'MEDIUM'
-            else:
+            elif prec >= 0.60 and total >= 20:
                 conf = 'LOW'
+            else:
+                continue  # skip rules below 60%
             
             # Extract the predicted value
             pred_val = None
@@ -287,7 +289,7 @@ def get_db():
     import psycopg2
     return psycopg2.connect(DB_URL)
 
-def load_rules(min_prec=0.75, min_total=30, max_rules=5000):
+def load_rules(min_prec=0.60, min_total=20, max_rules=8000):
     now = time.time()
     if now - _rules_cache['loaded_at'] < 300 and _rules_cache['rules']:
         return _rules_cache['rules']
