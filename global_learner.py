@@ -402,8 +402,8 @@ def mine_rules(fvecs, sources_used, min_hits=3, min_precision=0.78):
                         else:
                             effective_threshold = min_precision
 
-                        # Keep rule if: (bayesian >= threshold) OR (raw 100% perfect)
-                        if bayes_prec >= effective_threshold or raw_prec == 1.0:
+                        # Keep rule if bayesian precision meets threshold (prior handles tiny samples)
+                        if bayes_prec >= effective_threshold:
                             bayes_ev = round(bayes_prec * hits * (1 + math.log10(total + 1)), 2)
                             rules.append({'target': f"{target_key}={tv}",
                                           'conditions': {ck: cv}, 'lag': lag,
@@ -446,7 +446,7 @@ def mine_rules(fvecs, sources_used, min_hits=3, min_precision=0.78):
                         else:
                             effective_threshold = min_precision
 
-                        if bayes_prec >= effective_threshold or raw_prec == 1.0:
+                        if bayes_prec >= effective_threshold:
                             bayes_ev = round(bayes_prec * hits * (1 + math.log10(total + 1)), 2)
                             rules.append({'target': f"{target_key}={tv}",
                                           'conditions': {k1:v1,k2:v2}, 'lag': lag,
@@ -485,7 +485,7 @@ def mine_rules(fvecs, sources_used, min_hits=3, min_precision=0.78):
                         elif total >= 15: effective_threshold = 0.75
                         else: effective_threshold = min_precision + 0.05  # slightly stricter for 3-feat
 
-                        if bayes_prec >= effective_threshold or raw_prec == 1.0:
+                        if bayes_prec >= effective_threshold:
                             bayes_ev = round(bayes_prec * hits * (1 + math.log10(total + 1)), 2)
                             rules.append({'target': f"{target_key}={tv}",
                                           'conditions': {k1:v1,k2:v2,k3:v3}, 'lag': lag,
