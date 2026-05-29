@@ -3,7 +3,7 @@
 BangBet VFL Collector — results only, polls finished matches.
 No odds available. Has period scores (HT/FT). Team names are real.
 """
-import requests, json, time, os, glob
+import requests, json, time, os, glob, threading
 from datetime import datetime, timezone
 
 HEADERS = {
@@ -31,6 +31,65 @@ except Exception:
 
 _seen_keys = set()
 _pending_odds = {}  # (t_id, st) -> odds_by_team  (proactive cache for upcoming rounds)
+_odds_cache_lock = threading.Lock()
+
+def odds_poller():
+    """Background thread: polls match/list every 2s to catch the brief odds window."""
+    seen_tids = set()
+    while True:
+        try:
+            t_data = fetch(TOURNAMENT_URL)
+            if not t_data or not t_data.get('data'):
+                time.sleep(2); continue
+            for t in t_data['data']:
+                tid = t.get('tournamentId')
+                if not tid: continue
+                ml = fetch(MATCH_LIST_URL, {
+                    'producer': 6, 'sportId': 'sr:sport:1',
+                    'tournamentId': tid, 'country': 'ug',
+                })
+                if not ml or not ml.get('data', {}).get('data'):
+                    continue
+                odds_data = ml['data']['data']
+                if not odds_data:
+                    continue
+                # Parse odds into lookup
+                odds_by_team = {}
+                for om in odds_data:
+                    ht_name = om.get('homeTeamName', '')
+                    at_name = om.get('awayTeamName', '')
+                    match_name = f"{ht_name} vs. {at_name}"
+                    ml2 = om.get('marketList', [])
+                    if ml2 and ml2[0].get('markets'):
+                        outcomes = ml2[0]['markets'][0].get('outcomes', [])
+                        if len(outcomes) >= 3:
+                            h_od = outcomes[0].get('odds')
+                            d_od = outcomes[1].get('odds')
+                            a_od = outcomes[2].get('odds')
+                            if h_od and d_od and a_od:
+                                od = {'1': float(h_od), 'X': float(d_od), '2': float(a_od)}
+                                odds_by_team[ht_name] = od
+                                odds_by_team[at_name] = od
+                                odds_by_team[match_name] = od
+                if odds_by_team:
+                    # Try to find which scheduleDate this corresponds to
+                    md = fetch(MATCHDAY_URL, {'producer': 6, 'tournamentId': tid, 'country': 'ug'})
+                    target_st = None
+                    if md and md.get('data'):
+                        now_ms = int(time.time() * 1000)
+                        for rd in md['data']:
+                            sched = rd.get('scheduleDate', 0)
+                            if abs(sched - now_ms) < 180000:  # within 3 min
+                                target_st = sched
+                                break
+                    if target_st:
+                        with _odds_cache_lock:
+                            _pending_odds[(tid, target_st)] = odds_by_team
+                            seen_tids.add(tid)
+                        print(f"  [odds_poller] Cached {len(odds_by_team)} odds entries for {tid} @ {target_st}", flush=True)
+        except Exception as e:
+            pass
+        time.sleep(2)
 
 def fetch_round_odds(t_id):
     """Fetch odds from match/list for upcoming round and parse into lookup by team name."""
@@ -107,6 +166,10 @@ def print_match(m, i=1):
 def collect():
     print(f"[bangbet] Starting — polling tournaments...", flush=True)
 
+    # Start background odds poller (2s interval)
+    poller = threading.Thread(target=odds_poller, daemon=True)
+    poller.start()
+
     while True:
         try:
             t_data = fetch(TOURNAMENT_URL)
@@ -121,17 +184,6 @@ def collect():
                 # Get schedule
                 md = fetch(MATCHDAY_URL, {'producer': 6, 'tournamentId': t_id, 'country': 'ug'})
                 if not md or not md.get('data'): continue
-
-                # Pre-fetch odds for upcoming rounds (status=1) proactively
-                for rd in md['data']:
-                    if rd.get('status') == 1:  # upcoming — fetch odds now, cache for later
-                        st = rd.get('scheduleDate')
-                        cache_key = (t_id, st)
-                        if cache_key not in _pending_odds:
-                            odds = fetch_round_odds(t_id)
-                            if odds:
-                                _pending_odds[cache_key] = odds
-                                print(f"  → cached odds for upcoming round #{rd.get('number')} @ {st}", flush=True)
 
                 for rd in md['data']:
                     st = rd.get('scheduleDate')
@@ -199,9 +251,10 @@ def collect():
                     except Exception as e:
                         print(f"  [sqldb] DB write skipped: {e}", flush=True)
 
-                    # Use cached odds (pre-fetched when round was upcoming)
+                    # Use cached odds (pre-fetched by background poller)
                     cache_key = (t_id, st)
-                    odds_by_team = _pending_odds.pop(cache_key, {})
+                    with _odds_cache_lock:
+                        odds_by_team = _pending_odds.pop(cache_key, {})
                     if odds_by_team:
                         print(f"  → matched cached odds ({len(odds_by_team)} entries)", flush=True)
 
