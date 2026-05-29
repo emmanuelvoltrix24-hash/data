@@ -495,14 +495,15 @@ def main():
                 predictions = predict_round(features, rules)
                 
                 if predictions:
-                    # Batch save top 15 predictions
+                    # Save best rule per slot per TYPE (outcome, parity, cs, ht_parity)
                     batch = []
-                    seen_targets = set()
+                    best_per_slot = {}  # slot_type -> (ev_score, pred_dict)
                     for p in predictions:
-                        tkey = (p['slot'], p.get('pred_type',''), p.get('pred_val',''))
-                        if tkey in seen_targets:
-                            continue
-                        seen_targets.add(tkey)
+                        st_key = (p['slot'], p.get('pred_type', ''))
+                        if st_key not in best_per_slot or p['ev_score'] > best_per_slot[st_key][0]:
+                            best_per_slot[st_key] = (p['ev_score'], p)
+                    
+                    for st_key, (score, p) in sorted(best_per_slot.items()):
                         batch.append({
                             'round_id': rid, 'source': source, 'slot': p['slot'],
                             'target': p['target'], 'pred_type': p.get('pred_type'),
@@ -512,8 +513,6 @@ def main():
                             'confidence': p['confidence'], 'ev_score': p['ev_score'],
                             'features': json.dumps(features, default=str),
                         })
-                        if len(batch) >= 15:
-                            break
                     save_predictions_batch(batch)
                     
                     # Show pattern
