@@ -107,6 +107,37 @@ def rules_endpoint():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/audit')
+def audit_endpoint():
+    try:
+        from audit import audit_summary
+        return jsonify(audit_summary())
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/predictions')
+def predictions_endpoint():
+    try:
+        from db import get_db
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT round_id, source, slot, target, pred_type, pred_val, 
+                   precision, hits, total, confidence, created_at::text
+            FROM predictions 
+            ORDER BY created_at DESC 
+            LIMIT 50
+        """)
+        rows = cur.fetchall()
+        conn.close()
+        return jsonify([{
+            'round_id': r[0], 'source': r[1], 'slot': r[2], 'target': r[3],
+            'pred_type': r[4], 'pred_val': r[5], 'precision': r[6],
+            'hits': r[7], 'total': r[8], 'confidence': r[9], 'created_at': r[10],
+        } for r in rows])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 COLLECTORS = {
     'betkraft':   {'module': 'railway_collector', 'func': 'collect'},
     'bongobongo': {'module': 'bongobongo_collector', 'func': 'collect'},
@@ -142,6 +173,20 @@ def main():
     pt = threading.Thread(target=start_predictor, daemon=True)
     pt.start()
     print(f"[railway] global predictor thread started", flush=True)
+
+    # Start auditor (checks predictions vs actual results every 30s)
+    def start_auditor():
+        time.sleep(60)
+        try:
+            from audit import main as audit_main
+            print("[railway] auditor starting...", flush=True)
+            audit_main()
+        except Exception as e:
+            print(f"[railway] auditor crashed: {e}", flush=True)
+            import traceback; traceback.print_exc()
+    at = threading.Thread(target=start_auditor, daemon=True)
+    at.start()
+    print(f"[railway] auditor thread started", flush=True)
 
     # Run Flask in main thread
     print(f"[railway] Starting Flask on :{port}", flush=True)
