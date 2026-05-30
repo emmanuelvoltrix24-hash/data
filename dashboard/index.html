@@ -200,7 +200,8 @@ function pct(v) { return (v * 100).toFixed(1) + '%'; }
 function toggleSource(el) {
   const header = el.closest('.source-header');
   header.classList.toggle('collapsed');
-  const body = header.nextElementSibling;
+  const section = header.closest('.source-section');
+  const body = section ? section.querySelector('.source-body') : null;
   if (body) body.classList.toggle('hidden');
 }
 
