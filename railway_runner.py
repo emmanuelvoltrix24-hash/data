@@ -181,16 +181,17 @@ def api_rules_top():
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
-        SELECT target, precision, ev, hits, total, source, lag, status
+        SELECT target, conditions::text, precision, ev, hits, total, source, lag, status
         FROM global_rules 
         ORDER BY ev DESC 
-        LIMIT 50
+        LIMIT 100
     """)
     rows = cur.fetchall()
     conn.close()
     return jsonify({'rules': [{
-        'target': r[0], 'precision': r[1], 'ev': r[2], 'hits': r[3],
-        'total': r[4], 'source': r[5], 'lag': r[6], 'status': r[7],
+        'target': r[0], 'conditions': json.loads(r[1]) if r[1] else {},
+        'precision': r[2], 'ev': r[3], 'hits': r[4],
+        'total': r[5], 'source': r[6], 'lag': r[7], 'status': r[8],
     } for r in rows]})
 
 @app.route('/api/rounds/recent')

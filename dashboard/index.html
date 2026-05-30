@@ -418,7 +418,7 @@ async function loadRules() {
   if (d.error) return;
   const search = (document.getElementById('rules-search').value || '').toLowerCase();
   let list = d.rules || [];
-  if (search) list = list.filter(r => (r.target||'').toLowerCase().includes(search));
+  if (search) list = list.filter(r => (r.target||'').toLowerCase().includes(search) || JSON.stringify(r.conditions||{}).toLowerCase().includes(search));
   document.getElementById('rules-count').textContent = list.length + ' rules';
 
   const groups = {};
@@ -438,11 +438,13 @@ async function loadRules() {
       </div>
       <div class="source-body hidden">
         <div class="source-table-wrap">
-          <table><thead><tr><th>Target</th><th>Prec</th><th>EV</th><th>Hits</th><th>Total</th></tr></thead><tbody>`;
-    rules.slice(0, 30).forEach(r => {
-      html += `<tr>${cell(r.target)}${cell(pct(r.precision))}${cell(r.ev?.toFixed(1))}${cell(r.hits)}${cell(r.total)}</tr>`;
+          <table><thead><tr><th>IF</th><th>THEN</th><th>Prec</th><th>EV</th><th>Hits</th><th>Total</th></tr></thead><tbody>`;
+    rules.slice(0, 50).forEach(r => {
+      const conds = r.conditions || {};
+      const ifStr = Object.entries(conds).map(([k,v]) => `${k}=${v}`).join(' AND ');
+      html += `<tr>${cell(ifStr)}${cell(r.target)}${cell(pct(r.precision))}${cell(r.ev?.toFixed(1))}${cell(r.hits)}${cell(r.total)}</tr>`;
     });
-    if (rules.length > 30) html += `<tr><td colspan="5" style="color:#667788;text-align:center">...${rules.length - 30} more</td></tr>`;
+    if (rules.length > 50) html += `<tr><td colspan="6" style="color:#667788;text-align:center">...${rules.length - 50} more</td></tr>`;
     html += `</tbody></table></div></div></div>`;
   });
   document.getElementById('rules-container').innerHTML = html || '<div class="empty">No rules found</div>';
