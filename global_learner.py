@@ -364,9 +364,12 @@ def mine_rules(fvecs, sources_used, min_hits=3, min_precision=0.78):
         k.startswith(f"M{s}_") for s in [5,6,7,10]
     ) or k.startswith('R_')][:30]
 
-    # Only predict outcome/parity/cs targets
+    # Only predict outcome/parity/cs/market targets
     target_keys = [k for k in all_keys if k.endswith('_outcome') or
-                   k.endswith('_parity') or k.endswith('_cs')]
+                   k.endswith('_parity') or k.endswith('_cs') or
+                   k.endswith('_scored') or k.endswith('_home') or
+                   k.endswith('_away') or k.endswith('_band') or
+                   k.endswith('_group') or k.endswith('_o')]
 
     # Bayesian prior: assume 36% baseline (3-way average) with 10 pseudo-observations
     PRIOR_PRECISION = 0.36
