@@ -473,11 +473,14 @@ def get_latest_rounds():
     rounds = {}
     for src in ('betkraft', 'bongobongo', 'bangbet', 'betpawa'):
         try:
+            # Different sources have different min matches. bangbet has 8, betkraft has 10.
+            min_matches = 8 if src == 'bangbet' else 10
             cur.execute("""
                 SELECT round_id::text, collected_at::text 
                 FROM rounds WHERE source=%s 
+                AND jsonb_array_length(data->'matches') >= %s
                 ORDER BY collected_at DESC LIMIT 1
-            """, (src,))
+            """, (src, min_matches))
             row = cur.fetchone()
             if row:
                 rounds[src] = {'round_id': row[0], 'collected_at': row[1]}
@@ -624,7 +627,8 @@ def main():
                 
                 # Normalize matches
                 matches = normalize_matches(data, source, standings_dict)
-                if len(matches) < 10:
+                min_count = 8 if source == 'bangbet' else 10
+                if len(matches) < min_count:
                     seen.add(key)
                     continue
                 
