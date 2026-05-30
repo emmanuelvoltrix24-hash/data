@@ -96,6 +96,26 @@ def api_db_stats():
     conn.close()
     return jsonify({'rounds_per_source': {r[0]: r[1] for r in rows}})
 
+@app.route('/api/db/storage')
+def api_db_storage():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT relname AS table_name,
+               pg_size_pretty(pg_total_relation_size(relid)) AS total_size,
+               pg_relation_size(relid) AS data_bytes,
+               pg_total_relation_size(relid) AS total_bytes
+        FROM pg_catalog.pg_statio_user_tables
+        ORDER BY pg_total_relation_size(relid) DESC
+    """)
+    tables = [{'table': r[0], 'size': r[1], 'data_bytes': r[2], 'total_bytes': r[3]} for r in cur.fetchall()]
+    
+    cur.execute("SELECT pg_database_size(current_database())")
+    db_bytes = cur.fetchone()[0]
+    db_size = f"{db_bytes/1024/1024:.0f} MB" if db_bytes > 0 else "unknown"
+    conn.close()
+    return jsonify({'tables': tables, 'db_size': db_size, 'db_bytes': db_bytes})
+
 @app.route('/api/predictions')
 def api_predictions():
     conn = get_db()

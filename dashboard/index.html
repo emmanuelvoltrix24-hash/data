@@ -139,6 +139,7 @@ tr:hover { background: #1a2d3d; }
 <!-- SOURCES -->
 <div id="page-sources" class="page">
   <div class="grid" id="sources-grid"></div>
+  <div id="sources-storage"></div>
   <h2>Recent Rounds</h2>
   <div id="rounds-by-source"></div>
 </div>
@@ -350,6 +351,18 @@ async function loadSources() {
     });
     html += `<div class="card"><h3>Total</h3><div class="value">${total}</div><div class="sub">rounds across all sources</div></div>`;
     document.getElementById('sources-grid').innerHTML = html;
+  }
+
+  // Storage
+  const storage = await api(API + '/api/db/storage');
+  if (!storage.error) {
+    let shtml = '<h2 style="margin-top:16px">Storage</h2><div class="grid">';
+    shtml += `<div class="card" style="background:#1a2533"><h3>📦 Database</h3><div class="value">${storage.db_size}</div><div class="sub">total used</div></div>`;
+    (storage.tables || []).slice(0, 5).forEach(t => {
+      shtml += `<div class="card" style="background:#1a2533"><h3>${t.table}</h3><div class="value">${t.size}</div><div class="sub">table size</div></div>`;
+    });
+    shtml += '</div>';
+    document.getElementById('sources-storage').innerHTML = shtml;
   }
   
   const rounds = await api(API + '/api/rounds/recent');
