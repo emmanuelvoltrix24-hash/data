@@ -10,11 +10,21 @@ except: pass
 
 limit_sizes = {'bongobongo':50, 'betkraft':50, 'bangbet':100}
 src_cycle = list(limit_sizes.keys())
-idx_file = "/tmp/learner_idx.txt"
-src_idx = int(open(idx_file).read().strip()) if os.path.exists(idx_file) else 0
+
+# Persist round-robin index in DB so it survives restarts
+_conn = psycopg2.connect(os.environ.get("DATABASE_URL", ""))
+_c = _conn.cursor()
+_c.execute("CREATE TABLE IF NOT EXISTS learner_state (key TEXT PRIMARY KEY, val TEXT)")
+_c.execute("SELECT val FROM learner_state WHERE key='roundrobin_idx'")
+row = _c.fetchone()
+src_idx = int(row[0]) if row else 0
+_c.execute("INSERT INTO learner_state(key,val) VALUES('roundrobin_idx',%s) ON CONFLICT(key) DO UPDATE SET val=EXCLUDED.val",
+           (str((src_idx + 1) % len(src_cycle)),))
+_conn.commit()
+_c.close()
+_conn.close()
+
 src = src_cycle[src_idx % len(src_cycle)]
-with open(idx_file, 'w') as f:
-    f.write(str((src_idx + 1) % len(src_cycle)))
 
 t0 = time.time()
 prev = load_previous_rules()
