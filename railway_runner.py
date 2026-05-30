@@ -29,13 +29,16 @@ def learner_loop():
     import psycopg2
     from psycopg2.extras import RealDictCursor
     from global_learner import build_fvecs, mine_rules, save_rules, init_tables, load_previous_rules
-    init_tables()
+    try:
+        init_tables()
+    except:
+        pass
     while True:
         try:
             t0 = time.time()
             prev = load_previous_rules()
             all_rounds = []
-            for src, limit in [('bongobongo', 300), ('betkraft', 300), ('bangbet', 800)]:
+            for src, limit in [('bongobongo', 100), ('betkraft', 100), ('bangbet', 200)]:
                 try:
                     conn = psycopg2.connect(os.environ.get('DATABASE_URL', ''))
                     cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -227,8 +230,16 @@ def main():
         t.start()
         print(f"[railway] {name} thread started", flush=True)
 
-    # Learner
-    lt = threading.Thread(target=learner_loop, daemon=True)
+    # Learner — wrapped in restart loop
+    def start_learner():
+        while True:
+            try:
+                learner_loop()
+            except Exception as e:
+                print(f"[railway] learner died: {e} — restarting in 30s", flush=True)
+                import traceback; traceback.print_exc()
+                time.sleep(30)
+    lt = threading.Thread(target=start_learner, daemon=True)
     lt.start()
     print(f"[railway] learner thread started", flush=True)
 
