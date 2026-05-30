@@ -33,10 +33,15 @@ def learner_loop():
         init_tables()
     except:
         pass
+    import signal
+    def timeout_handler(signum, frame):
+        raise TimeoutError("learner cycle timed out")
+    signal.signal(signal.SIGALRM, timeout_handler)
     src_cycle = [('bongobongo', 100), ('betkraft', 100), ('bangbet', 200)]
     src_idx = 0
     while True:
         try:
+            signal.alarm(500)  # kill if cycle > 500s
             t0 = time.time()
             prev = load_previous_rules()
             all_rounds = []
