@@ -123,9 +123,12 @@ def api_predictions():
     cur.execute("""
         SELECT round_id, source, slot, target, pred_type, pred_val, 
                precision, hits, total, confidence, created_at::text
-        FROM predictions 
-        ORDER BY created_at DESC 
-        LIMIT 100
+        FROM (
+            SELECT *, ROW_NUMBER() OVER (PARTITION BY source ORDER BY created_at DESC) AS rn
+            FROM predictions
+        ) sub
+        WHERE rn <= 50
+        ORDER BY created_at DESC
     """)
     rows = cur.fetchall()
     conn.close()
