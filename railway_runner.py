@@ -33,12 +33,15 @@ def learner_loop():
         init_tables()
     except:
         pass
+    src_cycle = [('bongobongo', 100), ('betkraft', 100), ('bangbet', 200)]
+    src_idx = 0
     while True:
         try:
             t0 = time.time()
             prev = load_previous_rules()
             all_rounds = []
-            for src, limit in [('bongobongo', 100), ('betkraft', 100), ('bangbet', 200)]:
+            for i in range(len(src_cycle)):
+                src, limit = src_cycle[(src_idx + i) % len(src_cycle)]
                 try:
                     conn = psycopg2.connect(os.environ.get('DATABASE_URL', ''))
                     cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -52,8 +55,15 @@ def learner_loop():
                 all_rounds.extend(rounds)
                 fv, su = build_fvecs(rounds)
                 if fv:
+                    print(f"[learner] mining {src}...", flush=True)
                     rules = mine_rules(fv, su, min_hits=4, min_precision=0.70)
                     save_rules(rules, {}, len(rounds), source=src)
+                    new_market = sum(1 for r in rules if any(x in r['target'] for x in ['gg_scored','tg25_scored','cs_home','dc_home','margin_group','score_band','cs_away','dc_away','tg45_scored']))
+                    print(f"[learner] {src}: {len(rules)} rules ({new_market} new market), {time.time()-t0:.0f}s", flush=True)
+                # Only do one source per cycle
+                break
+            src_idx = (src_idx + 1) % len(src_cycle)
+            
             if len(all_rounds) >= 30:
                 fvecs, sources_used = build_fvecs(all_rounds)
                 rules = mine_rules(fvecs, sources_used, min_hits=10, min_precision=0.75)
