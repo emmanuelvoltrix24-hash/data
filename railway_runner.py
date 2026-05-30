@@ -25,59 +25,59 @@ def run_forever(name, module_name, collect_func_name='collect'):
             import traceback; traceback.print_exc()
             time.sleep(10)
 
-def learner_loop():
-    import psycopg2
-    from psycopg2.extras import RealDictCursor
-    from global_learner import build_fvecs, mine_rules, save_rules, init_tables, load_previous_rules
-    try:
-        init_tables()
-    except:
-        pass
-    import signal
-    def timeout_handler(signum, frame):
-        raise TimeoutError("learner cycle timed out")
-    signal.signal(signal.SIGALRM, timeout_handler)
-    src_cycle = [('bongobongo', 100), ('betkraft', 100), ('bangbet', 200)]
-    src_idx = 0
-    while True:
+LEARNER_SCRIPT = r'''
+import os, sys, json, time, psycopg2
+from psycopg2.extras import RealDictCursor
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from global_learner import build_fvecs, mine_rules, save_rules, init_tables, load_previous_rules
+try: init_tables()
+except: pass
+limit_sizes = {'bongobongo':50, 'betkraft':50, 'bangbet':100}
+src_cycle = list(limit_sizes.keys())
+src_idx = int(open("/tmp/learner_idx.txt","r").read().strip()) if os.path.exists("/tmp/learner_idx.txt") else 0
+t0 = time.time()
+prev = load_previous_rules()
+src = src_cycle[src_idx % len(src_cycle)]
+limit = limit_sizes[src]
+try:
+    conn = psycopg2.connect(os.environ.get("DATABASE_URL",""))
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute("SET statement_timeout = '120s'")
+    cur.execute("SELECT data, source FROM rounds WHERE source=%s ORDER BY round_id DESC LIMIT %%s" % limit, (src,))
+    rows = cur.fetchall()
+    conn.close()
+    rounds = [(r["data"], r["source"]) for r in reversed(rows)]
+    if len(rounds) >= 10:
+        fv, su = build_fvecs(rounds)
+        if fv:
+            rules = mine_rules(fv, su, min_hits=4, min_precision=0.70)
+            save_rules(rules, {}, len(rounds), source=src)
+            nm = sum(1 for r in rules if any(x in r.get("target","") for x in ["gg_scored","tg25_scored","cs_home","dc_home","margin_group","score_band","cs_away","dc_away","tg45_scored"]))
+            print(f"[learner] {src}: {len(rules)} rules ({nm} new market) in {time.time()-t0:.0f}s")
+    # Global mine if we have many rounds from different sources
+    all_rounds = []
+    for s in src_cycle:
         try:
-            signal.alarm(500)  # kill if cycle > 500s
-            t0 = time.time()
-            prev = load_previous_rules()
-            all_rounds = []
-            for i in range(len(src_cycle)):
-                src, limit = src_cycle[(src_idx + i) % len(src_cycle)]
-                try:
-                    conn = psycopg2.connect(os.environ.get('DATABASE_URL', ''))
-                    cur = conn.cursor(cursor_factory=RealDictCursor)
-                    cur.execute("SELECT data, source FROM rounds WHERE source=%s ORDER BY round_id DESC LIMIT %s", (src, limit))
-                    rows = cur.fetchall()
-                    conn.close()
-                except:
-                    continue
-                rounds = [(r['data'], r['source']) for r in reversed(rows)]
-                if len(rounds) < 15: continue
-                all_rounds.extend(rounds)
-                fv, su = build_fvecs(rounds)
-                if fv:
-                    print(f"[learner] mining {src}...", flush=True)
-                    rules = mine_rules(fv, su, min_hits=4, min_precision=0.70)
-                    save_rules(rules, {}, len(rounds), source=src)
-                    new_market = sum(1 for r in rules if any(x in r['target'] for x in ['gg_scored','tg25_scored','cs_home','dc_home','margin_group','score_band','cs_away','dc_away','tg45_scored']))
-                    print(f"[learner] {src}: {len(rules)} rules ({new_market} new market), {time.time()-t0:.0f}s", flush=True)
-                # Only do one source per cycle
-                break
-            src_idx = (src_idx + 1) % len(src_cycle)
-            
-            if len(all_rounds) >= 30:
-                fvecs, sources_used = build_fvecs(all_rounds)
-                rules = mine_rules(fvecs, sources_used, min_hits=10, min_precision=0.75)
-                save_rules(rules, prev, len(all_rounds), source='all')
-                imperfect = sum(1 for r in rules if r['precision'] < 1.0)
-                print(f"[learner] {len(rules)} global rules ({imperfect} imperfect) in {time.time()-t0:.1f}s", flush=True)
-        except Exception as e:
-            import traceback; traceback.print_exc()
-        time.sleep(600)
+            c2 = psycopg2.connect(os.environ.get("DATABASE_URL",""))
+            c2.set_session(readonly=True)
+            cu2 = c2.cursor(cursor_factory=RealDictCursor)
+            cu2.execute("SET statement_timeout = '60s'")
+            cu2.execute("SELECT data, source FROM rounds WHERE source=%%s ORDER BY round_id DESC LIMIT %d" % (limit//2), (s,))
+            for rw in cu2.fetchall():
+                all_rounds.append((rw["data"], rw["source"]))
+            c2.close()
+        except: pass
+    if len(all_rounds) >= 20:
+        fvecs, su2 = build_fvecs(all_rounds)
+        gl = mine_rules(fvecs, su2, min_hits=8, min_precision=0.75)
+        save_rules(gl, prev, len(all_rounds), source="all")
+        imp = sum(1 for r in gl if r["precision"] < 1.0)
+        print(f"[learner] global: {len(gl)} rules ({imp} imperfect) in {time.time()-t0:.0f}s")
+except Exception as e:
+    import traceback; traceback.print_exc()
+with open("/tmp/learner_idx.txt","w") as f:
+    f.write(str((src_idx + 1) % len(src_cycle)))
+'''
 
 from flask import Flask, jsonify, send_from_directory
 
@@ -248,12 +248,16 @@ def main():
     # Learner — wrapped in restart loop
     def start_learner():
         while True:
+            import subprocess
+            proc = subprocess.Popen([sys.executable, 'learner_worker.py'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             try:
-                learner_loop()
-            except Exception as e:
-                print(f"[railway] learner died: {e} — restarting in 30s", flush=True)
-                import traceback; traceback.print_exc()
-                time.sleep(30)
+                out, _ = proc.communicate(timeout=420)
+                print(out.decode(errors='replace').rstrip(), flush=True)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+                print("[learner] TIMEOUT — killed after 420s", flush=True)
+            time.sleep(600)
     lt = threading.Thread(target=start_learner, daemon=True)
     lt.start()
     print(f"[railway] learner thread started", flush=True)

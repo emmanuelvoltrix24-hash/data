@@ -344,21 +344,16 @@ def build_fvecs(rounds_with_source):
 
 # ── Rule mining ───────────────────────────────────────────────────────────────
 
-def mine_rules(fvecs, sources_used, min_hits=3, min_precision=0.78):
+def mine_rules(fvecs, sources_used, min_hits=3, min_precision=0.78, time_budget=240, _start=None):
     """
     Mine predictive rules from feature vectors.
-    
-    Enhancements:
-    - Bayesian precision: (hits + prior_mass) / (total + prior_strength)
-      to avoid overvaluing tiny 100% samples.
-    - Dynamic min_precision: lower threshold for larger sample sizes.
-    - Sorting by Bayesian EV (= bayes_precision * hits * log10(total+1))
-      so high-volume rules at moderate precision can rank above tiny 100% ones.
-    - 100% rules are still kept regardless of sample size (user requirement).
+    time_budget: max seconds to spend mining (returns partial results after)
     """
     n = len(fvecs)
     if n == 0:
         return []
+    _deadline = (_start or time.time()) + time_budget
+    
     all_keys = list(fvecs[0].keys())
     focus_keys = [k for k in all_keys if any(
         k.startswith(f"M{s}_") for s in [5,6,7,10]
@@ -377,11 +372,20 @@ def mine_rules(fvecs, sources_used, min_hits=3, min_precision=0.78):
     PRIOR_MASS      = PRIOR_PRECISION * PRIOR_STRENGTH
 
     rules = []
+    _timed_out = False
 
     for lag in [1, 2, 3]:
+        if _timed_out:
+            break
         pairs = [(i, i+lag) for i in range(n-lag)]
 
         for target_key in target_keys:
+            if _timed_out:
+                break
+            if time.time() > _deadline:
+                print(f"[mine_rules] timed out at {target_key} (lag {lag}) — {len(rules)} rules so far", flush=True)
+                _timed_out = True
+                break
             target_vals = {j: fvecs[j].get(target_key) for _, j in pairs}
 
             # 1-feature
