@@ -57,10 +57,10 @@ _conn = None
 
 def _db():
     global _conn
-    from psycopg.rows import dict_row
-    import psycopg
+    from psycopg2.extras import RealDictCursor
+    import psycopg2
     if _conn is None or _conn.closed:
-        _conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
+        _conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
     return _conn
 
 def load_seen():
