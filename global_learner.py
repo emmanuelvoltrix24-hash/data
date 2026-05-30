@@ -301,6 +301,16 @@ def build_fvecs(rounds_with_source):
                 'ht_outcome':m.get('ht_outcome'),
                 'both_late': m.get('any_late') and m.get('h_late_goals',0) > 0 and m.get('a_late_goals',0) > 0,
                 'any_late':  m.get('any_late', False),
+                # Derived market features (from scores, always available)
+                'gg_scored':     m['hg'] > 0 and m['ag'] > 0,
+                'tg25_scored':   m['hg'] + m['ag'] >= 3,
+                'tg45_scored':   m['hg'] + m['ag'] >= 4,
+                'cs_home':       m['ag'] == 0 and m['hg'] > 0,
+                'cs_away':       m['hg'] == 0 and m['ag'] > 0,
+                'dc_home':       m['hg'] >= m['ag'],
+                'dc_away':       m['ag'] >= m['hg'],
+                'margin_group':  'big' if abs(m['hg']-m['ag']) >= 3 else ('small' if abs(m['hg']-m['ag']) == 1 else 'draw'),
+                'score_band':    '5plus' if m['total'] >= 5 else str(m['total']),
             }
             if m['h_odd'] and m['d_odd'] and m['a_odd']:
                 if m['h_odd'] < m['a_odd'] and m['h_odd'] < m['d_odd']: feats['odds_fav'] = 'H'

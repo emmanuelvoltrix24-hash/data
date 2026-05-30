@@ -125,6 +125,24 @@ def extract_features(matches, standings_dict=None):
         feat[f'M{n}_any_late'] = any_late
         feat[f'M{n}_both_late'] = (h_late > 0 and a_late > 0)
         
+        # Market-friendly features (derived from actual score, always available)
+        feat[f'M{n}_gg_yes'] = (hg > 0 and ag > 0)  # Both teams scored
+        feat[f'M{n}_tg25_o'] = (total >= 3)  # Over 2.5 goals
+        feat[f'M{n}_cs_home'] = (ag == 0 and hg > 0)  # Home clean sheet win
+        feat[f'M{n}_cs_away'] = (hg == 0 and ag > 0)  # Away clean sheet win
+        feat[f'M{n}_dc_home'] = (hg >= ag)  # Double chance home (1X)
+        feat[f'M{n}_dc_away'] = (ag >= hg)  # Double chance away (X2)
+        feat[f'M{n}_margin_group'] = 'big' if abs(hg-ag) >= 3 else ('small' if abs(hg-ag) == 1 else 'draw')
+        if total >= 4: feat[f'M{n}_tg45_o'] = True
+        elif total > 0: feat[f'M{n}_tg45_o'] = False
+        # Exact score bands
+        if total >= 5: feat[f'M{n}_score_band'] = '5plus'
+        elif total == 4: feat[f'M{n}_score_band'] = '4'
+        elif total == 3: feat[f'M{n}_score_band'] = '3'
+        elif total == 2: feat[f'M{n}_score_band'] = '2'
+        elif total == 1: feat[f'M{n}_score_band'] = '1'
+        else: feat[f'M{n}_score_band'] = '0'
+        
         # Half-time
         ht_hg = m.get('ht_hg')
         ht_ag = m.get('ht_ag')
@@ -355,6 +373,33 @@ def predict_round(features, rules):
             elif 'R_home_wins=' in target:
                 pred_val = target.split('=')[1]
                 pred_type = 'R_home_wins'
+            elif '_gg_scored=' in target:
+                pred_val = target.split('=')[1]
+                pred_type = 'gg_scored'
+            elif '_tg25_scored=' in target:
+                pred_val = target.split('=')[1]
+                pred_type = 'tg25_scored'
+            elif '_tg45_scored=' in target:
+                pred_val = target.split('=')[1]
+                pred_type = 'tg45_scored'
+            elif '_cs_home=' in target:
+                pred_val = target.split('=')[1]
+                pred_type = 'cs_home'
+            elif '_cs_away=' in target:
+                pred_val = target.split('=')[1]
+                pred_type = 'cs_away'
+            elif '_dc_home=' in target:
+                pred_val = target.split('=')[1]
+                pred_type = 'dc_home'
+            elif '_dc_away=' in target:
+                pred_val = target.split('=')[1]
+                pred_type = 'dc_away'
+            elif '_margin_group=' in target:
+                pred_val = target.split('=')[1]
+                pred_type = 'margin_group'
+            elif '_score_band=' in target:
+                pred_val = target.split('=')[1]
+                pred_type = 'score_band'
             
             key = (slot, pred_type, pred_val)
             if key in matched_keys:
