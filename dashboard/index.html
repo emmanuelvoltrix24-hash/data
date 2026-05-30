@@ -57,6 +57,35 @@ tr:hover { background: #1a2d3d; }
 .badge-ht_cs { background: #8bc34a20; color: #8bc34a; border: 1px solid #8bc34a40; }
 .badge-gg_yes { background: #ff572220; color: #ff5722; border: 1px solid #ff572240; }
 .badge-tg25_o { background: #79554820; color: #795548; border: 1px solid #79554840; }
+.badge-gg_scored { background: #ff572220; color: #ff5722; border: 1px solid #ff572240; }
+.badge-tg25_scored { background: #79554820; color: #795548; border: 1px solid #79554840; }
+.badge-tg45_scored { background: #607d8b20; color: #607d8b; border: 1px solid #607d8b40; }
+.badge-cs_home { background: #00c85320; color: #00c853; border: 1px solid #00c85340; }
+.badge-cs_away { background: #ff174420; color: #ff1744; border: 1px solid #ff174440; }
+.badge-dc_home { background: #2979ff20; color: #2979ff; border: 1px solid #2979ff40; }
+.badge-dc_away { background: #d500f920; color: #d500f9; border: 1px solid #d500f940; }
+.badge-margin_group { background: #76ff0320; color: #76ff03; border: 1px solid #76ff0340; }
+.badge-score_band { background: #e040fb20; color: #e040fb; border: 1px solid #e040fb40; }
+
+/* Mobile collapse defaults */
+.source-body.hidden { display: none; }
+
+/* Responsive */
+@media (max-width: 600px) {
+  body { padding: 10px; font-size: 14px; }
+  h1 { font-size: 1.2em; }
+  table { font-size: 0.7em; }
+  th, td { padding: 4px 5px; }
+  .grid { grid-template-columns: 1fr 1fr; gap: 6px; }
+  .card { padding: 10px; }
+  .card .value { font-size: 1.3em; }
+  .search-input { width: 100%; }
+  .nav { gap: 6px; }
+  .nav a { padding: 6px 10px; font-size: 0.75em; }
+  .source-header { padding: 10px 12px; }
+  .source-meta { font-size: 0.65em; }
+  .badge { padding: 1px 5px; font-size: 0.65em; }
+}
 
 .nav { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
 .nav a { color: #e0e6ed; text-decoration: none; padding: 8px 18px; border-radius: 6px; border: 1px solid #2a3d4d; cursor: pointer; font-size: 0.9em; }
@@ -91,14 +120,14 @@ tr:hover { background: #1a2d3d; }
   <a data-page="rules">📏 Rules</a>
 </div>
 
-<!-- PREDICTIONS - Grouped by Collector -->
+<!-- PREDICTIONS -->
 <div id="page-predictions" class="page active">
   <div class="flex-row">
     <div class="conf-btn active" data-conf="all">All</div>
     <div class="conf-btn" data-conf="HIGH">HIGH</div>
     <div class="conf-btn" data-conf="MEDIUM">MEDIUM</div>
     <div class="conf-btn" data-conf="LOW">LOW</div>
-    <select id="market-filter" style="background:#1a2d3d;border:1px solid #2a3d4d;color:#e0e6ed;padding:4px 10px;border-radius:4px;font-size:0.85em">
+    <select id="market-filter" class="search-input" style="width:auto" onchange="loadPredictions()">
       <option value="all">All Markets</option>
       <option value="parity">Parity</option>
       <option value="cs">CS</option>
@@ -106,34 +135,32 @@ tr:hover { background: #1a2d3d; }
       <option value="ht_outcome">HT Outcome</option>
       <option value="total_parity">Total Parity</option>
       <option value="both_score">Both Score</option>
-      <option value="both_late">Both Late</option>
       <option value="outcome">Outcome</option>
-      <option value="odds_fav">Odds Fav</option>
-      <option value="any_late">Any Late</option>
+      <option value="gg_scored">GG</option>
+      <option value="tg25_scored">O2.5</option>
+      <option value="tg45_scored">O4.5</option>
+      <option value="cs_home">CS Home</option>
+      <option value="cs_away">CS Away</option>
+      <option value="dc_home">DC Home</option>
+      <option value="dc_away">DC Away</option>
+      <option value="margin_group">Margin</option>
+      <option value="score_band">Score Band</option>
     </select>
-    <input class="search-input" id="pred-search" placeholder="Search slot or target...">
+    <input class="search-input" id="pred-search" placeholder="Search slot/target/source..." oninput="loadPredictions()">
     <span id="pred-count" style="color:#667788;font-size:0.8em"></span>
   </div>
   <div id="predictions-container"></div>
 </div>
 
-<!-- AUDIT - Grouped by Collector -->
+<!-- AUDIT -->
 <div id="page-audit" class="page">
   <div class="grid" id="audit-stats"></div>
-  <h2>Best Markets Per Collector</h2>
-  <div id="best-markets"></div>
-  <h2>Accuracy by Slot</h2>
-  <div style="overflow-x:auto">
-    <table><thead><tr><th>Slot</th><th>Checks</th><th>Correct</th><th>Accuracy</th></tr></thead>
-      <tbody id="audit-body"><tr><td colspan="4" class="empty">Loading...</td></tr></tbody>
-    </table>
-  </div>
+  <h2>Best Markets Per Source</h2>
+  <div id="audit-best-markets"></div>
+  <h2>Slot Accuracy</h2>
+  <div id="audit-slots"></div>
   <h2>Recent Audit Log</h2>
-  <div style="overflow-x:auto">
-    <table><thead><tr><th>Time</th><th>Source</th><th>Round</th><th>Slot</th><th>Predicted</th><th>Actual</th><th>Result</th></tr></thead>
-      <tbody id="audit-log-body"><tr><td colspan="7" class="empty">Loading...</td></tr></tbody>
-    </table>
-  </div>
+  <div id="audit-log"></div>
 </div>
 
 <!-- SOURCES -->
@@ -147,7 +174,7 @@ tr:hover { background: #1a2d3d; }
 <!-- RULES -->
 <div id="page-rules" class="page">
   <div class="flex-row">
-    <input class="search-input" id="rules-search" placeholder="Search target...">
+    <input class="search-input" id="rules-search" placeholder="Search target..." oninput="loadRules()">
     <span id="rules-count" style="color:#667788;font-size:0.8em"></span>
   </div>
   <div id="rules-container"></div>
@@ -156,61 +183,63 @@ tr:hover { background: #1a2d3d; }
 <script>
 const API = window.location.origin;
 let activeConf = 'all';
-let predTimer;
-
-// ── Nav ─────────────────────────────────────────────────────────────────────
-document.querySelectorAll('.nav a').forEach(a => {
-  a.addEventListener('click', () => {
-    document.querySelectorAll('.nav a').forEach(x => x.classList.remove('active'));
-    document.querySelectorAll('.page').forEach(x => x.classList.remove('active'));
-    a.classList.add('active');
-    const page = a.dataset.page;
-    document.getElementById('page-' + page).classList.add('active');
-    clearInterval(predTimer);
-    if (page === 'predictions') { loadPredictions(); predTimer = setInterval(loadPredictions, 10000); }
-    if (page === 'audit') loadAudit();
-    if (page === 'sources') loadSources();
-    if (page === 'rules') loadRules();
-  });
-});
-
-// ── Filters ────────────────────────────────────────────────────────────────
-document.querySelectorAll('.conf-btn').forEach(b => {
-  b.addEventListener('click', () => {
-    document.querySelectorAll('.conf-btn').forEach(x => x.classList.remove('active'));
-    b.classList.add('active');
-    activeConf = b.dataset.conf;
-    loadPredictions();
-  });
-});
-document.getElementById('pred-search').addEventListener('input', loadPredictions);
-document.getElementById('market-filter').addEventListener('change', loadPredictions);
-document.getElementById('rules-search').addEventListener('input', loadRules);
-
-// ── Helpers ─────────────────────────────────────────────────────────────────
-function badge(c, label) { return `<span class="badge badge-${c}">${label ?? c}</span>`; }
-function pct(v) { return (v * 100).toFixed(1) + '%'; }
-function dot(s) { return `<span class="source-dot ${s}"></span>`; }
-function cell(v) { return `<td>${v ?? '-'}</td>`; }
+let predTimer, auditTimer, sourcesTimer, rulesTimer;
 
 async function api(url) {
   try {
     const r = await fetch(url);
-    if (!r.ok) throw new Error(r.statusText);
+    if (!r.ok) return { error: r.status };
     return await r.json();
-  } catch(e) {
-    return { error: e.message };
-  }
+  } catch(e) { return { error: e.message }; }
 }
 
-// Toggle source sections
+function dot(src) { return `<span class="source-dot ${src}"></span>`; }
+function cell(v) { return `<td>${v ?? '-'}</td>`; }
+function pct(v) { return (v * 100).toFixed(1) + '%'; }
+
 function toggleSource(el) {
   const header = el.closest('.source-header');
   header.classList.toggle('collapsed');
-  header.nextElementSibling.classList.toggle('hidden');
+  const body = header.nextElementSibling;
+  if (body) body.classList.toggle('hidden');
 }
 
-// ── Predictions (grouped by source) ─────────────────────────────────────────
+function badge(label, count) {
+  const c = count ? '' : '';
+  return `<span class="badge badge-${label}">${label}${count ? ' ' + count : ''}</span>`;
+}
+
+// ── Tab switching ──
+document.querySelectorAll('.nav a').forEach(a => {
+  a.addEventListener('click', function() {
+    document.querySelectorAll('.nav a').forEach(x => x.classList.remove('active'));
+    this.classList.add('active');
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    const page = document.getElementById('page-' + this.dataset.page);
+    if (page) page.classList.add('active');
+    
+    // Clear intervals and load correct tab
+    clearInterval(predTimer); clearInterval(auditTimer);
+    clearInterval(sourcesTimer); clearInterval(rulesTimer);
+    
+    if (this.dataset.page === 'predictions') { loadPredictions(); predTimer = setInterval(loadPredictions, 10000); }
+    else if (this.dataset.page === 'audit') { loadAudit(); auditTimer = setInterval(loadAudit, 15000); }
+    else if (this.dataset.page === 'sources') { loadSources(); sourcesTimer = setInterval(loadSources, 30000); }
+    else if (this.dataset.page === 'rules') { loadRules(); rulesTimer = setInterval(loadRules, 20000); }
+  });
+});
+
+// ── Confidence filter ──
+document.querySelectorAll('.conf-btn').forEach(btn => {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('.conf-btn').forEach(x => x.classList.remove('active'));
+    this.classList.add('active');
+    activeConf = this.dataset.conf;
+    loadPredictions();
+  });
+});
+
+// ── Predictions ──
 async function loadPredictions() {
   const d = await api(API + '/api/predictions');
   if (d.error) return;
@@ -219,11 +248,10 @@ async function loadPredictions() {
   let list = d.predictions || [];
   if (activeConf !== 'all') list = list.filter(p => p.confidence === activeConf);
   if (marketFilter !== 'all') list = list.filter(p => p.pred_type === marketFilter);
-  if (search) list = list.filter(p => p.slot.toLowerCase().includes(search) || p.target.toLowerCase().includes(search) || p.source.includes(search) || (p.pred_type || '').includes(search));
-
+  if (search) list = list.filter(p => (p.slot||'').toLowerCase().includes(search) || (p.target||'').toLowerCase().includes(search) || (p.source||'').includes(search) || (p.pred_type||'').includes(search));
+  
   document.getElementById('pred-count').textContent = list.length + ' predictions';
 
-  // Group by source
   const groups = {};
   list.forEach(p => {
     if (!groups[p.source]) groups[p.source] = [];
@@ -235,58 +263,46 @@ async function loadPredictions() {
   order.forEach(src => {
     const items = groups[src] || [];
     if (!items.length) return;
-
-    // Count conf levels
     const hi = items.filter(p => p.confidence === 'HIGH').length;
     const med = items.filter(p => p.confidence === 'MEDIUM').length;
-    
-    // Count market types
     const types = {};
     items.forEach(p => { const t = p.pred_type || '?'; types[t] = (types[t] || 0) + 1; });
-    const typeSummary = Object.entries(types).sort((a,b) => b[1]-a[1]).map(([t,c]) => `${badge(t,c)}`).join(' ');
+    const typeSummary = Object.entries(types).sort((a,b) => b[1]-a[1]).map(([t,c]) => badge(t, c)).join(' ');
 
     html += `<div class="source-section source-${src}">
-      <div class="source-header" onclick="toggleSource(this)">
-        <span class="arrow">▼</span>
+      <div class="source-header collapsed" onclick="toggleSource(this)">
+        <span class="arrow">▶</span>
         ${dot(src)}
         <span class="source-name">${src}</span>
-        <span class="source-meta">${items.length} predictions</span>
+        <span class="source-meta">${items.length} preds</span>
       </div>
       <div style="padding:6px 16px;font-size:0.75em;border-bottom:1px solid #1a2d3d;color:#667788">
         ${typeSummary}
       </div>
-      <div class="source-body">
+      <div class="source-body hidden">
         <div class="source-table-wrap">
           <table>
-            <thead><tr>
-              <th>Time</th><th>Round</th><th>Slot</th><th>Target</th><th>Type</th><th>Val</th><th>Prec</th><th>Hits</th><th>Total</th><th>Conf</th>
-            </tr></thead>
+            <thead><tr><th>Round</th><th>Slot</th><th>Target</th><th>Type</th><th>Val</th><th>Prec</th><th>Conf</th></tr></thead>
             <tbody>`;
     items.slice(0, 50).forEach(p => {
       html += `<tr>
-        ${cell(p.created_at?.substring(11,19) || '-')}
         ${cell(p.round_id)}
         ${cell(p.slot)}
         ${cell(p.target)}
         ${cell(badge(p.pred_type || '?'))}
         ${cell(p.pred_val)}
         ${cell(pct(p.precision))}
-        ${cell(p.hits)}
-        ${cell(p.total)}
         ${cell(badge(p.confidence))}
       </tr>`;
     });
-    if (items.length > 50) html += `<tr><td colspan="10" style="color:#667788;text-align:center">...and ${items.length - 50} more</td></tr>`;
-    html += `</tbody></table>
-        </div>
-      </div>
-    </div>`;
+    if (items.length > 50) html += `<tr><td colspan="7" style="color:#667788;text-align:center">...${items.length - 50} more</td></tr>`;
+    html += `</tbody></table></div></div></div>`;
   });
-
+  
   document.getElementById('predictions-container').innerHTML = html || '<div class="empty">No predictions found</div>';
 }
 
-// ── Audit ───────────────────────────────────────────────────────────────────
+// ── Audit ──
 async function loadAudit() {
   const summary = await api(API + '/api/audit');
   if (!summary.error) {
@@ -298,47 +314,48 @@ async function loadAudit() {
     let bmHtml = '';
     const order = ['betkraft', 'bongobongo', 'bangbet', 'betpawa'];
     order.forEach(src => {
-      const markets = (summary.best_markets_per_source || {})[src];
-      if (!markets || !markets.length) return;
-      bmHtml += `<div class="card"><h3>${dot(src)} ${src}</h3>`;
+      const markets = (summary.best_markets_per_source || {})[src] || [];
+      if (!markets.length) return;
+      bmHtml += `<div class="source-section source-${src}" style="margin-bottom:8px">
+        <div class="source-header collapsed" onclick="toggleSource(this)" style="padding:8px 14px">
+          <span class="arrow">▶</span> ${dot(src)}
+          <span class="source-name">${src}</span>
+          <span class="source-meta">${markets.length} markets</span>
+        </div>
+        <div class="source-body hidden">
+          <div class="source-table-wrap">
+            <table><thead><tr><th>Market</th><th>Preds</th><th>Correct</th><th>Accuracy</th></tr></thead>
+            <tbody>`;
       markets.forEach(m => {
-        bmHtml += `<div style="margin-top:5px">${badge(m.market)} <strong>${m.accuracy}%</strong> (${m.correct}/${m.total})</div>`;
+        bmHtml += `<tr><td>${badge(m.market)}</td><td>${m.total}</td><td>${m.correct}</td><td><span style="color:${m.accuracy >= 60 ? '#00c853' : '#ff6d00'}">${m.accuracy}%</span></td></tr>`;
       });
-      bmHtml += `</div>`;
+      bmHtml += `</tbody></table></div></div></div>`;
     });
-    document.getElementById('best-markets').innerHTML = bmHtml ? `<div class="grid">${bmHtml}</div>` : '<div class="empty">No audit data yet</div>';
+    document.getElementById('audit-best-markets').innerHTML = bmHtml || '<div class="empty">No markets audited yet</div>';
   }
-  
+
   const slots = await api(API + '/api/audit/slots');
   if (!slots.error) {
-    let html = '';
+    let shtml = '<div class="source-table-wrap"><table><thead><tr><th>Slot</th><th>Checks</th><th>Correct</th><th>Accuracy</th></tr></thead><tbody>';
     (slots || []).forEach(s => {
-      const ok = s.accuracy >= 60;
-      html += `<tr>${cell(s.slot)}${cell(s.checks)}${cell(s.correct)}${cell(badge(ok ? 'true' : 'false', s.accuracy + '%'))}</tr>`;
+      shtml += `<tr><td>${s.slot}</td><td>${s.checks}</td><td>${s.correct}</td><td><span style="color:${s.accuracy >= 60 ? '#00c853' : '#ff6d00'}">${s.accuracy}%</span></td></tr>`;
     });
-    document.getElementById('audit-body').innerHTML = html || '<tr><td colspan="4" class="empty">No data</td></tr>';
+    shtml += '</tbody></table></div>';
+    document.getElementById('audit-slots').innerHTML = shtml;
   }
-  
+
   const log = await api(API + '/api/audit/log');
   if (!log.error) {
-    let html = '';
+    let lhtml = '<div class="source-table-wrap"><table><thead><tr><th>Source</th><th>Round</th><th>Slot</th><th>Target</th><th>Actual</th><th>Status</th></tr></thead><tbody>';
     (log.log || []).slice(0, 30).forEach(l => {
-      const ok = l.was_correct === true || l.was_correct === 'true' || l.was_correct === '1';
-      html += `<tr>
-        ${cell(l.checked_at?.substring(11,19) || '-')}
-        ${cell(dot(l.source) + ' ' + l.source)}
-        ${cell(l.round_id)}
-        ${cell(l.slot)}
-        ${cell(l.target?.split('=')[1] || l.target)}
-        ${cell(l.actual_val)}
-        ${cell(badge(ok ? 'correct' : 'wrong', ok ? '✓' : '✗'))}
-      </tr>`;
+      lhtml += `<tr><td>${l.source}</td><td>${l.round_id}</td><td>${l.slot}</td><td>${l.target}</td><td>${l.actual_val}</td><td>${badge(l.was_correct ? 'correct' : 'wrong')}</td></tr>`;
     });
-    document.getElementById('audit-log-body').innerHTML = html || '<tr><td colspan="7" class="empty">No audit log yet</td></tr>';
+    lhtml += '</tbody></table></div>';
+    document.getElementById('audit-log').innerHTML = lhtml || '<div class="empty">No audit log yet</div>';
   }
 }
 
-// ── Sources (grouped rounds) ────────────────────────────────────────────────
+// ── Sources ──
 async function loadSources() {
   const stats = await api(API + '/api/db/stats');
   if (!stats.error) {
@@ -347,24 +364,23 @@ async function loadSources() {
     order.forEach(src => {
       const cnt = (stats.rounds_per_source || {})[src] || 0;
       total += cnt;
-      html += `<div class="card"><h3>${dot(src)} ${src}</h3><div class="value">${cnt}</div><div class="sub">rounds collected</div></div>`;
+      html += `<div class="card"><h3>${dot(src)} ${src}</h3><div class="value">${cnt}</div><div class="sub">rounds</div></div>`;
     });
-    html += `<div class="card"><h3>Total</h3><div class="value">${total}</div><div class="sub">rounds across all sources</div></div>`;
+    html += `<div class="card"><h3>Total</h3><div class="value">${total}</div><div class="sub">rounds</div></div>`;
     document.getElementById('sources-grid').innerHTML = html;
   }
 
-  // Storage
   const storage = await api(API + '/api/db/storage');
   if (!storage.error) {
     let shtml = '<h2 style="margin-top:16px">Storage</h2><div class="grid">';
-    shtml += `<div class="card" style="background:#1a2533"><h3>📦 Database</h3><div class="value">${storage.db_size}</div><div class="sub">total used</div></div>`;
+    shtml += `<div class="card" style="background:#1a2533"><h3>📦 Database</h3><div class="value">${storage.db_size}</div><div class="sub">total</div></div>`;
     (storage.tables || []).slice(0, 5).forEach(t => {
-      shtml += `<div class="card" style="background:#1a2533"><h3>${t.table}</h3><div class="value">${t.size}</div><div class="sub">table size</div></div>`;
+      shtml += `<div class="card" style="background:#1a2533"><h3>${t.table}</h3><div class="value">${t.size}</div><div class="sub">table</div></div>`;
     });
     shtml += '</div>';
     document.getElementById('sources-storage').innerHTML = shtml;
   }
-  
+
   const rounds = await api(API + '/api/rounds/recent');
   if (!rounds.error) {
     const grouped = {};
@@ -372,76 +388,66 @@ async function loadSources() {
       if (!grouped[r.source]) grouped[r.source] = [];
       grouped[r.source].push(r);
     });
-    
     let html = '';
     const order = ['betkraft', 'bongobongo', 'bangbet', 'betpawa'];
     order.forEach(src => {
       const items = grouped[src] || [];
       if (!items.length) return;
       html += `<div class="source-section source-${src}" style="margin-bottom:8px">
-        <div class="source-header" onclick="toggleSource(this)" style="padding:8px 14px">
-          <span class="arrow">▼</span>
-          ${dot(src)}
+        <div class="source-header collapsed" onclick="toggleSource(this)" style="padding:8px 14px">
+          <span class="arrow">▶</span> ${dot(src)}
           <span class="source-name">${src}</span>
-          <span class="source-meta">${items.length} recent rounds</span>
+          <span class="source-meta">${items.length} recent</span>
         </div>
-        <div class="source-body">
+        <div class="source-body hidden">
           <div class="source-table-wrap">
-            <table><thead><tr><th>Time</th><th>Round ID</th></tr></thead><tbody>`;
+            <table><thead><tr><th>Round ID</th><th>Time</th></tr></thead><tbody>`;
       items.forEach(r => {
-        html += `<tr>${cell(r.time?.substring(11,19) || '-')}${cell(r.round_id)}</tr>`;
+        html += `<tr><td>${r.round_id}</td><td>${r.time || '-'}</td></tr>`;
       });
       html += `</tbody></table></div></div></div>`;
     });
-    document.getElementById('rounds-by-source').innerHTML = html || '<div class="empty">No rounds found</div>';
+    document.getElementById('rounds-by-source').innerHTML = html || '<div class="empty">No rounds yet</div>';
   }
 }
 
-// ── Rules (grouped by source) ──────────────────────────────────────────────
+// ── Rules ──
 async function loadRules() {
   const d = await api(API + '/api/rules/top');
   if (d.error) return;
   const search = (document.getElementById('rules-search').value || '').toLowerCase();
   let list = d.rules || [];
-  if (search) list = list.filter(r => r.target.toLowerCase().includes(search));
+  if (search) list = list.filter(r => (r.target||'').toLowerCase().includes(search));
   document.getElementById('rules-count').textContent = list.length + ' rules';
-  
+
   const groups = {};
   list.forEach(r => {
     const src = r.source || 'all';
     if (!groups[src]) groups[src] = [];
     groups[src].push(r);
   });
-  
+
   let html = '';
   Object.entries(groups).forEach(([src, rules]) => {
     html += `<div class="source-section" style="margin-bottom:8px">
-      <div class="source-header ${src !== 'all' ? 'source-' + src : ''}" onclick="toggleSource(this)" style="padding:8px 14px">
-        <span class="arrow">▼</span>
+      <div class="source-header collapsed" onclick="toggleSource(this)" style="padding:8px 14px">
+        <span class="arrow">▶</span>
         <span class="source-name">${src}</span>
         <span class="source-meta">${rules.length} rules</span>
       </div>
-      <div class="source-body">
+      <div class="source-body hidden">
         <div class="source-table-wrap">
-          <table><thead><tr><th>Target</th><th>Prec</th><th>EV</th><th>Hits</th><th>Total</th><th>Lag</th></tr></thead><tbody>`;
+          <table><thead><tr><th>Target</th><th>Prec</th><th>EV</th><th>Hits</th><th>Total</th></tr></thead><tbody>`;
     rules.slice(0, 30).forEach(r => {
-      html += `<tr>
-        ${cell(r.target)}
-        ${cell(pct(r.precision))}
-        ${cell(r.ev?.toFixed(1))}
-        ${cell(r.hits)}
-        ${cell(r.total)}
-        ${cell('lag=' + r.lag)}
-      </tr>`;
+      html += `<tr>${cell(r.target)}${cell(pct(r.precision))}${cell(r.ev?.toFixed(1))}${cell(r.hits)}${cell(r.total)}</tr>`;
     });
-    if (rules.length > 30) html += `<tr><td colspan="6" style="color:#667788;text-align:center">...and ${rules.length - 30} more</td></tr>`;
+    if (rules.length > 30) html += `<tr><td colspan="5" style="color:#667788;text-align:center">...${rules.length - 30} more</td></tr>`;
     html += `</tbody></table></div></div></div>`;
   });
-  
   document.getElementById('rules-container').innerHTML = html || '<div class="empty">No rules found</div>';
 }
 
-// ── Init ────────────────────────────────────────────────────────────────────
+// ── Init ──
 loadPredictions();
 predTimer = setInterval(loadPredictions, 10000);
 </script>
