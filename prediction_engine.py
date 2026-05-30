@@ -65,9 +65,9 @@ def load_rules(min_prec: float = 0.75, min_total: int = 50, max_rules: int = 500
     if now - _rules_cache['loaded_at'] < 300 and _rules_cache['rules'] is not None:
         return _rules_cache['rules']
     try:
-        import psycopg
-        from psycopg.rows import dict_row
-        with psycopg.connect(DB_URL, row_factory=dict_row) as conn:
+        import psycopg2
+        from psycopg2.extras import RealDictCursor
+        with psycopg2.connect(DB_URL, cursor_factory=RealDictCursor) as conn:
             with conn.cursor() as cur:
                 cur.execute("""
                     SELECT target, conditions::text, lag, precision, hits, total, source

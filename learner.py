@@ -17,8 +17,8 @@ VFL Pattern Learner v2
 import os, json, time, itertools, logging
 from collections import Counter, defaultdict
 from datetime import datetime
-import psycopg
-from psycopg.rows import dict_row
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,7 +31,7 @@ RUN_EVERY    = 300
 
 
 def get_db():
-    return psycopg.connect(DATABASE_URL, row_factory=dict_row)
+    return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
 
 
 def init_tables():

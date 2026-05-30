@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """One-shot rule mining — run this on Railway to populate global_rules."""
-import sys, time, os, psycopg
-from psycopg.rows import dict_row
+import sys, time, os, psycopg2
+from psycopg2.extras import RealDictCursor
 from collections import Counter
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -39,8 +39,8 @@ def normalize_data(data):
     return data
 
 def load_source(src, limit=1000):
-    with psycopg.connect(DB, row_factory=dict_row) as conn:
-        with conn.cursor() as cur:
+    with psycopg2.connect(DB) as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("SELECT data, source FROM rounds WHERE source=%s ORDER BY round_id DESC LIMIT %s", (src, limit))
             rows = cur.fetchall()
     return [(normalize_data(r['data']), r['source']) for r in reversed(rows)]
@@ -86,3 +86,4 @@ if all_rounds:
         print(f"    {r['precision']:.0%} ({r['hits']}/{r['total']}) lag={r['lag']} src={r.get('sources')} | {r['target']} | IF {r['conditions']}")
 
 print("\nDone.")
+

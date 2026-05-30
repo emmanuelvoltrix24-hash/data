@@ -3,8 +3,8 @@
 import os, json
 from datetime import datetime
 from flask import Flask, jsonify, send_from_directory
-import psycopg
-from psycopg.rows import dict_row
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import requests
 
 app = Flask(__name__, static_folder='dashboard')
@@ -32,7 +32,7 @@ BK_HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json",
                "Referer": "https://legacy-ui.betkraft.co.uk/"}
 
 def get_db():
-    return psycopg.connect(DB, row_factory=dict_row)
+    return psycopg2.connect(DB, cursor_factory=RealDictCursor)
 
 # ── API endpoints ─────────────────────────────────────────────────────────────
 
