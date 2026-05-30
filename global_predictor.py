@@ -433,25 +433,44 @@ def get_db():
     import psycopg2
     return psycopg2.connect(DB_URL)
 
-def load_rules(min_prec=0.60, min_total=20, max_rules=8000):
+def load_rules(min_prec=0.60, min_total=20, max_rules=15000):
     now = time.time()
     if now - _rules_cache['loaded_at'] < 300 and _rules_cache['rules']:
         return _rules_cache['rules']
     try:
         conn = get_db()
         cur = conn.cursor()
-        cur.execute("""
-            SELECT target, conditions::text, lag, precision, hits, total, source
-            FROM global_rules
-            WHERE status='active' AND precision >= %s AND total >= %s
-            ORDER BY (precision * hits * LOG(total+1)) DESC
-            LIMIT %s
-        """, (min_prec, min_total, max_rules))
-        rows = cur.fetchall()
-        conn.close()
+        # Load top rules per target type so new markets aren't drowned out by old ht_parity
+        market_types = ['gg_scored','tg25_scored','tg45_scored','cs_home','cs_away',
+                        'dc_home','dc_away','margin_group','score_band',
+                        'outcome','cs','parity','ht_parity','total_parity',
+                        'both_score','both_late','any_late','ht_outcome']
         rules = []
-        for r in rows:
-            rules.append({
+        for mt in market_types:
+            like = f"%{mt}=%"
+            cur.execute("""
+                SELECT target, conditions::text, lag, precision, hits, total, source
+                FROM global_rules
+                WHERE status='active' AND precision >= %s AND total >= %s AND target LIKE %s
+                ORDER BY (precision * hits * LOG(total+1)) DESC
+                LIMIT 400
+            """, (min_prec, min_total, like))
+            for r in cur.fetchall():
+                rules.append(r)
+        # Fill remaining with top EV if under max_rules
+        if len(rules) < max_rules:
+            cur.execute("""
+                SELECT target, conditions::text, lag, precision, hits, total, source
+                FROM global_rules
+                WHERE status='active' AND precision >= %s AND total >= %s
+                ORDER BY (precision * hits * LOG(total+1)) DESC
+                LIMIT %s
+            """, (min_prec, min_total, max_rules - len(rules)))
+            rules.extend(cur.fetchall())
+        conn.close()
+        loaded = []
+        for r in rules:
+            loaded.append({
                 'target': r[0],
                 'conditions': json.loads(r[1]),
                 'lag': r[2],
@@ -460,9 +479,9 @@ def load_rules(min_prec=0.60, min_total=20, max_rules=8000):
                 'total': r[5],
                 'source': r[6],
             })
-        _rules_cache['rules'] = rules
+        _rules_cache['rules'] = loaded
         _rules_cache['loaded_at'] = time.time()
-        return rules
+        return loaded
     except Exception as e:
         return _rules_cache.get('rules', [])
 
