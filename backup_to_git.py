@@ -8,6 +8,7 @@ BACKUP_DIR = 'backups'
 TABLES = ['global_rules', 'rounds', 'predictions', 'audit_log']
 KEEP_ROUNDS = 200      # keep this many recent rounds for predictor features
 KEEP_PREDS   = 500      # keep this many recent predictions for auditor
+KEEP_RULES  = 10000     # keep top rules by EV for app display + predictor
 
 def backup_and_cut():
     if not DB:
@@ -61,8 +62,8 @@ def backup_and_cut():
     # ── Truncate / prune to free Postgres space ──
     print("[backup] Starting truncation...", flush=True)
     try:
-        cur.execute('TRUNCATE TABLE global_rules;')
-        print("[backup]  global_rules: TRUNCATED (learner regenerates)", flush=True)
+        cur.execute(f'DELETE FROM global_rules WHERE id NOT IN (SELECT id FROM global_rules ORDER BY ev_score DESC LIMIT {KEEP_RULES});')
+        print(f"[backup]  global_rules: removed lowest-EV, kept top {KEEP_RULES} for app", flush=True)
 
         cur.execute(f'DELETE FROM rounds WHERE id NOT IN (SELECT id FROM rounds ORDER BY created_at DESC LIMIT {KEEP_ROUNDS});')
         removed = cur.rowcount
