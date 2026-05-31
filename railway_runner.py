@@ -286,6 +286,23 @@ def main():
     threading.Thread(target=start_auditor, daemon=True).start()
     print(f"[railway] auditor thread started", flush=True)
 
+    # Git backup every 6 hours
+    def start_backup():
+        time.sleep(300)  # initial delay for DB to populate
+        while True:
+            try:
+                import subprocess
+                p = subprocess.run([sys.executable, 'backup_to_git.py'], timeout=300, capture_output=True, text=True)
+                if p.stdout: print(p.stdout.rstrip(), flush=True)
+                if p.returncode != 0 and p.stderr: print(f"[backup] error: {p.stderr[:200]}", flush=True)
+            except subprocess.TimeoutExpired:
+                print("[backup] TIMEOUT -- killed after 300s", flush=True)
+            except Exception as e:
+                print(f"[backup] crashed: {e}", flush=True)
+            time.sleep(21600)  # 6 hours
+    threading.Thread(target=start_backup, daemon=True).start()
+    print(f"[backup] backup thread started (every 6h)", flush=True)
+
     print(f"[railway] Starting Flask on :{port}", flush=True)
     app.run(host='0.0.0.0', port=port)
 
