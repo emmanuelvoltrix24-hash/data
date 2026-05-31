@@ -79,7 +79,7 @@ def load_previous_rules():
     try:
         with get_db() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT target, conditions, lag, precision, hits FROM global_rules WHERE status='active'")
+                cur.execute("SELECT target, conditions, lag, precision, hits, total FROM global_rules WHERE status='active'")
                 return {(r['target'], json.dumps(r['conditions'], sort_keys=True), r['lag']): r
                         for r in cur.fetchall()}
     except:
