@@ -37,12 +37,14 @@ DATABASE_URL=${DATABASE_URL}
 OCI=true
 ENVFILE
 
-echo "[5/6] Systemd services — app + learner..."
+echo "[5/6] Systemd services — app + learner + backup..."
 cp ${APP_DIR}/oci_deploy/vfl-app.service /etc/systemd/system/
 cp ${APP_DIR}/oci_deploy/vfl-learner.service /etc/systemd/system/
 cp ${APP_DIR}/oci_deploy/vfl-learner.timer /etc/systemd/system/
+cp ${APP_DIR}/oci_deploy/vfl-backup.service /etc/systemd/system/
+cp ${APP_DIR}/oci_deploy/vfl-backup.timer /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable --now vfl-app vfl-learner.timer
+systemctl enable --now vfl-app vfl-learner.timer vfl-backup.timer
 
 echo "[6/6] Nginx reverse proxy..."
 cat > /etc/nginx/sites-available/vfl << 'NGINX'
