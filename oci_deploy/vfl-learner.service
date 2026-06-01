@@ -1,0 +1,11 @@
+[Unit]
+Description=VFL Learner — mine rules (runs via timer)
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/vfl-deploy
+EnvironmentFile=/etc/systemd/system/vfl-app.env
+ExecStart=/opt/vfl-deploy/venv/bin/python learner_worker.py
+StandardOutput=journal
+StandardError=journal
