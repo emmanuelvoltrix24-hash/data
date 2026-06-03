@@ -136,25 +136,48 @@ def api_db_storage():
 
 @app.route('/api/predictions')
 def api_predictions():
+    import json
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
-        SELECT round_id, source, slot, target, pred_type, pred_val, 
-               precision, hits, total, confidence, created_at::text
+        SELECT p.round_id, p.source, p.slot, p.target, p.pred_type, p.pred_val,
+               p.precision, p.hits, p.total, p.confidence, p.created_at::text,
+               r.data->'matches' AS raw_matches
         FROM (
             SELECT *, ROW_NUMBER() OVER (PARTITION BY source ORDER BY created_at DESC) AS rn
             FROM predictions
-        ) sub
-        WHERE rn <= 50
-        ORDER BY created_at DESC
+        ) p
+        LEFT JOIN rounds r ON p.round_id::text = r.data->>'round_id' AND p.source = r.data->>'source'
+        WHERE p.rn <= 50
+        ORDER BY p.created_at DESC
     """)
     rows = cur.fetchall()
     conn.close()
-    return jsonify({'predictions': [{
-        'round_id': r[0], 'source': r[1], 'slot': r[2], 'target': r[3],
-        'pred_type': r[4], 'pred_val': r[5], 'precision': r[6],
-        'hits': r[7], 'total': r[8], 'confidence': r[9], 'created_at': r[10],
-    } for r in rows]})
+    result = []
+    for r in rows:
+        entry = {
+            'round_id': r[0], 'source': r[1], 'slot': r[2], 'target': r[3],
+            'pred_type': r[4], 'pred_val': r[5], 'precision': r[6],
+            'hits': r[7], 'total': r[8], 'confidence': r[9], 'created_at': r[10],
+        }
+        # Extract team names
+        slot_num = ''.join(filter(str.isdigit, r[2] or ''))
+        try:
+            matches = json.loads(r[11]) if isinstance(r[11], str) else (r[11] or [])
+            idx = int(slot_num) - 1 if slot_num else -1
+            if 0 <= idx < len(matches):
+                m = matches[idx]
+                home = m.get('home_team', m.get('home', '?'))
+                away = m.get('away_team', m.get('away', '?'))
+                if home != '?' and away != '?':
+                    def abbr(n):
+                        p = n.split()
+                        return (p[0][:3] + ' ' + p[-1][:2]).upper() if len(p) >= 2 else n[:5].upper()
+                    entry['teams'] = f"{abbr(home)} vs {abbr(away)}"
+        except:
+            pass
+        result.append(entry)
+    return jsonify({'predictions': result})
 
 @app.route('/api/audit')
 def api_audit():
@@ -309,3 +332,28 @@ def main():
 if __name__ == '__main__':
     main()
 
+
+# ── CORS ──────────────────────────────────────────────────────────────
+@app.after_request
+def add_cors(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    return response
+
+# ── Teams API ─────────────────────────────────────────────────────────
+@app.route('/api/teams')
+def api_teams():
+    import json
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT data->>'source', data->'matches' FROM rounds WHERE data->'matches' IS NOT NULL ORDER BY collected_at DESC LIMIT 6")
+    rows = []
+    for r in cur.fetchall():
+        try:
+            matches = json.loads(r[1]) if isinstance(r[1], str) else (r[1] or [])
+            rows.append({"source": r[0], "matches": [{"slot": "M"+str(j+1), "home": m.get("home_team", m.get("home", "?")), "away": m.get("away_team", m.get("away", "?"))} for j,m in enumerate(matches[:10])]})
+        except:
+            pass
+    cur.close()
+    return jsonify({"rounds": rows})
