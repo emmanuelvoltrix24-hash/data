@@ -14,7 +14,6 @@ DB_PASS="$(openssl rand -base64 24 | tr -d '\n/+= ' | head -c 24)"
 
 echo "[1/6] System packages..."
 dnf install -y -q postgresql15-server postgresql15-devel postgresql15-contrib python3-pip python3-devel git nginx
-pip3 install --upgrade pip -q 2>/dev/null || true
 
 echo "[2/6] PostgreSQL..."
 /usr/bin/postgresql15-setup --initdb 2>/dev/null || true
