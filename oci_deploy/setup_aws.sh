@@ -16,8 +16,8 @@ echo "[1/6] System packages..."
 dnf install -y -q postgresql15-server postgresql15-devel postgresql15-contrib python3-pip python3-devel git nginx
 
 echo "[2/6] PostgreSQL..."
-/usr/bin/postgresql15-setup --initdb 2>/dev/null || true
-systemctl enable --now postgresql15
+/usr/bin/postgresql-setup --initdb 2>/dev/null || true
+systemctl enable --now postgresql
 
 # Configure PostgreSQL to trust local connections
 sudo -u postgres psql -c "CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASS}';" 2>/dev/null || true
