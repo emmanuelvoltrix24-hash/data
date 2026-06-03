@@ -3,7 +3,7 @@ import os, sys, json, time
 import psycopg2
 from psycopg2.extras import RealDictCursor
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from global_learner import build_fvecs, mine_rules, save_rules, init_tables, load_previous_rules
+from global_learner import build_fvecs, mine_rules, save_rules, init_tables, load_previous_rules, learn_from_audit
 
 try: init_tables()
 except: pass
@@ -50,6 +50,12 @@ except Exception as e:
     import traceback; traceback.print_exc()
     print(f"[learner] {src} FAILED: {e}", flush=True)
 
+# Self-learning: audit feedback loop
+try:
+    p, d, dl = learn_from_audit(source=src, max_entries=1000)
+except Exception as e:
+    print(f"[learner] audit feedback FAILED: {e}", flush=True)
+
 # Global mine — sample from all sources
 try:
     all_rounds = []
@@ -74,3 +80,9 @@ try:
             print(f"[learner] global: {len(gl)} rules ({imp} imperfect) in {time.time()-t0:.0f}s", flush=True)
 except Exception as e:
     print(f"[learner] global FAILED: {e}", flush=True)
+
+# Self-learning: global audit feedback
+try:
+    learn_from_audit(source=None, max_entries=2000)
+except Exception as e:
+    print(f"[learner] global audit feedback FAILED: {e}", flush=True)

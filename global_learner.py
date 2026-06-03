@@ -629,3 +629,106 @@ if __name__ == '__main__':
             import traceback; traceback.print_exc()
 
         time.sleep(RUN_EVERY)
+
+
+def learn_from_audit(source=None, max_entries=2000):
+    """
+    Self-learning feedback loop:
+    - Load audit_log entries
+    - For WRONG predictions: find matching rule in global_rules, reduce ev_score
+    - For CORRECT predictions: find matching rule, slightly increase ev_score
+    - Delete rules that fall below min ev_score threshold
+    Returns (promoted, demoted, deleted) counts.
+    """
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                # Get last processed audit ID from learner_state
+                cur.execute("SELECT val FROM learner_state WHERE key='last_audit_id'")
+                row = cur.fetchone()
+                last_id = int(row['val']) if row else 0
+
+                # Count how many new audit entries
+                cur.execute("SELECT COUNT(*) FROM audit_log WHERE id > %s", (last_id,))
+                total_new = cur.fetchone()['count']
+                if total_new == 0:
+                    return (0, 0, 0)
+
+                # Load new audit entries
+                if source:
+                    cur.execute(
+                        "SELECT * FROM audit_log WHERE id > %s AND source=%s ORDER BY id LIMIT %s",
+                        (last_id, source, max_entries))
+                else:
+                    cur.execute(
+                        "SELECT id, target, source, was_correct, precision, slot FROM audit_log WHERE id > %s ORDER BY id LIMIT %s",
+                        (last_id, max_entries))
+
+                entries = cur.fetchall()
+                if not entries:
+                    max_id = last_id
+                    cur.execute("INSERT INTO learner_state(key,val) VALUES('last_audit_id',%s) ON CONFLICT(key) DO UPDATE SET val=EXCLUDED.val", (str(max_id),))
+                    conn.commit()
+                    return (0, 0, 0)
+
+                # Build target keys for matching
+                promoted = 0
+                demoted = 0
+                errors = 0
+
+                for entry in entries:
+                    entry_target = entry['target']
+                    entry_source = entry.get('source', '')
+                    entry_slot = entry.get('slot', '')
+                    was_correct = entry['was_correct']
+
+                    # Find matching rule(s) in global_rules
+                    # Match on target + source (slot is part of target like "M7_cs_away=False")
+                    cur.execute(
+                        "SELECT id, target, ev, source FROM global_rules "
+                        "WHERE target=%s AND (source=%s OR source='all') "
+                        "ORDER BY ev DESC LIMIT 3",
+                        (entry_target, entry_source))
+
+                    rules = cur.fetchall()
+                    if not rules:
+                        errors += 1
+                        continue
+
+                    for rule in rules:
+                        rule_id = rule['id']
+                        current_ev = rule['ev'] or 0
+
+                        if was_correct:
+                            # Slight promotion for correct prediction
+                            new_ev = current_ev * 1.05
+                            promoted += 1
+                        else:
+                            # Significant demotion for wrong prediction
+                            new_ev = current_ev * 0.7
+                            demoted += 1
+
+                        new_ev = max(0, new_ev)
+                        cur.execute("UPDATE global_rules SET ev=%s WHERE id=%s", (new_ev, rule_id))
+
+                # Delete rules with ev below threshold (unless they have high hit counts)
+                min_ev = 5.0
+                cur.execute("DELETE FROM global_rules WHERE ev < %s AND hits < 10", (min_ev,))
+                deleted = cur.rowcount
+
+                # Record last processed id
+                max_id = max(e['id'] for e in entries)
+                cur.execute("INSERT INTO learner_state(key,val) VALUES('last_audit_id',%s) ON CONFLICT(key) DO UPDATE SET val=EXCLUDED.val", (str(max_id),))
+
+                conn.commit()
+
+                if total_new > 0:
+                    print(f"  [learn] audited {len(entries)}/{total_new} | +{promoted} promoted, -{demoted} demoted, {deleted} deleted, {errors} unmatched", flush=True)
+
+                return (promoted, demoted, deleted)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"  [learn] FAILED: {e}", flush=True)
+        return (0, 0, 0)
