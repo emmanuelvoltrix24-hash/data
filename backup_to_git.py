@@ -59,30 +59,8 @@ def backup_and_cut():
         conn.close()
         return
 
-    # ── Truncate / prune to free Postgres space ──
-    print("[backup] Starting truncation...", flush=True)
-    try:
-        cur.execute(f'DELETE FROM global_rules WHERE id NOT IN (SELECT id FROM global_rules ORDER BY ev_score DESC LIMIT {KEEP_RULES});')
-        print(f"[backup]  global_rules: removed lowest-EV, kept top {KEEP_RULES} for app", flush=True)
-
-        cur.execute(f'DELETE FROM rounds WHERE id NOT IN (SELECT id FROM rounds ORDER BY created_at DESC LIMIT {KEEP_ROUNDS});')
-        removed = cur.rowcount
-        print(f"[backup]  rounds: removed {removed} oldest, kept {KEEP_ROUNDS} recent", flush=True)
-
-        cur.execute(f'DELETE FROM predictions WHERE id NOT IN (SELECT id FROM predictions ORDER BY created_at DESC LIMIT {KEEP_PREDS});')
-        removed = cur.rowcount
-        print(f"[backup]  predictions: removed {removed} oldest, kept {KEEP_PREDS} recent", flush=True)
-
-        # audit_log is small — keep everything
-        conn.commit()
-        print("[backup] Truncation complete. Space freed.", flush=True)
-
-        # VACUUM to reclaim disk
-        cur.execute('VACUUM;')
-        print("[backup] VACUUM done.", flush=True)
-    except Exception as e:
-        conn.rollback()
-        print(f"[backup] truncation error: {e}", flush=True)
+    # ── No truncation — 18 GB free on EC2, keep all data ──
+    print("[backup] 20 GB disk — keeping all data in PostgreSQL", flush=True)
 
     conn.close()
 
