@@ -394,7 +394,7 @@ def mine_rules(fvecs, sources_used, min_hits=3, min_precision=0.78, time_budget=
                 for i, j in pairs:
                     cv, tv = fvecs[i].get(ck), target_vals.get(j)
                     if cv is not None and tv is not None:
-                        w = 2 if i >= n * 0.6 else 1
+                        w = 0.5 + 1.5 * math.exp(-0.05 * (n - 1 - i))
                         vc[cv][tv] += w
                 for cv, tc in vc.items():
                     total = sum(tc.values())
@@ -438,7 +438,7 @@ def mine_rules(fvecs, sources_used, min_hits=3, min_precision=0.78, time_budget=
                 for i, j in pairs:
                     v1,v2,tv = fvecs[i].get(k1),fvecs[i].get(k2),target_vals.get(j)
                     if None not in (v1,v2,tv):
-                        w = 2 if i >= n*0.6 else 1
+                        w = 0.5 + 1.5 * math.exp(-0.05 * (n - 1 - i))
                         vc[(v1,v2)][tv] += w
                 for (v1,v2), tc in vc.items():
                     total = sum(tc.values())
@@ -481,7 +481,7 @@ def mine_rules(fvecs, sources_used, min_hits=3, min_precision=0.78, time_budget=
                 for i, j in pairs:
                     v1,v2,v3,tv = fvecs[i].get(k1),fvecs[i].get(k2),fvecs[i].get(k3),target_vals.get(j)
                     if None not in (v1,v2,v3,tv):
-                        w = 2 if i >= n*0.6 else 1
+                        w = 0.5 + 1.5 * math.exp(-0.05 * (n - 1 - i))
                         vc[(v1,v2,v3)][tv] += w
                 for (v1,v2,v3), tc in vc.items():
                     total = sum(tc.values())
@@ -563,9 +563,13 @@ def save_rules(rules, prev_rules, rounds_used, source='all'):
             if prev_failed > 0:
                 print(f"  Degradation: {prev_failed} rules lost >10% precision")
 
+            # Snapshot adjusted EV scores from audit feedback before deleting
+            cur.execute("SELECT target, ev FROM global_rules WHERE source=%s", (source,))
+            old_ev = {r['target']: float(r['ev']) for r in cur.fetchall()}
+
             cur.execute("DELETE FROM global_rules WHERE source=%s", (source,))
             for r in rules:
-                ev = r.get('bayes_ev', round(r['precision'] * r['hits'], 2))
+                ev = old_ev.get(r['target'], r.get('bayes_ev', round(r['precision'] * r['hits'], 2)))
                 cur.execute("""
                     INSERT INTO global_rules
                     (target, conditions, lag, hits, total, precision, recall, ev,

@@ -40,6 +40,15 @@ try:
     conn.close()
     rounds = [(r['data'], r['source']) for r in reversed(rows)]
     if len(rounds) >= 10:
+        # Step 1: Learn from audit BEFORE mining — adjusts EV on existing rules
+        try:
+            p, d, dl = learn_from_audit(source=src, max_entries=1000)
+            if p + d > 0:
+                print(f"[learner] {src} audit: {p} promoted, {d} demoted, {dl} deleted", flush=True)
+        except Exception as ea:
+            print(f"[learner] audit feedback FAILED: {ea}", flush=True)
+
+        # Step 2: Mine new rules (save_rules preserves adjusted EV via snapshot)
         fv, su = build_fvecs(rounds)
         if fv:
             rules = mine_rules(fv, su, min_hits=4, min_precision=0.70, time_budget=180)
@@ -49,12 +58,6 @@ try:
 except Exception as e:
     import traceback; traceback.print_exc()
     print(f"[learner] {src} FAILED: {e}", flush=True)
-
-# Self-learning: audit feedback loop
-try:
-    p, d, dl = learn_from_audit(source=src, max_entries=1000)
-except Exception as e:
-    print(f"[learner] audit feedback FAILED: {e}", flush=True)
 
 # Global mine — sample from all sources
 try:
@@ -72,6 +75,13 @@ try:
         except:
             pass
     if len(all_rounds) >= 20:
+        # Step 1: Learn from audit BEFORE global mining
+        try:
+            learn_from_audit(source=None, max_entries=2000)
+        except Exception as ea:
+            print(f"[learner] global audit feedback FAILED: {ea}", flush=True)
+
+        # Step 2: Mine global rules (preserves adjusted EV)
         fvecs, su2 = build_fvecs(all_rounds)
         if fvecs:
             gl = mine_rules(fvecs, su2, min_hits=8, min_precision=0.75)
@@ -80,9 +90,3 @@ try:
             print(f"[learner] global: {len(gl)} rules ({imp} imperfect) in {time.time()-t0:.0f}s", flush=True)
 except Exception as e:
     print(f"[learner] global FAILED: {e}", flush=True)
-
-# Self-learning: global audit feedback
-try:
-    learn_from_audit(source=None, max_entries=2000)
-except Exception as e:
-    print(f"[learner] global audit feedback FAILED: {e}", flush=True)
