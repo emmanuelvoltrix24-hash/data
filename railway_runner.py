@@ -357,3 +357,16 @@ def api_teams():
             pass
     cur.close()
     return jsonify({"rounds": rows})
+
+@app.route('/api/data/quality')
+def api_data_quality():
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute("SELECT DISTINCT ON (source) source, unique_patterns, total_rounds, repeats, repeat_pct, checked_at FROM data_quality ORDER BY source, checked_at DESC")
+        rows = [dict(r) for r in cur.fetchall()]
+        return jsonify({"quality": rows})
+    except Exception as e:
+        return jsonify({"quality": [], "error": str(e)})
+    finally:
+        cur.close()

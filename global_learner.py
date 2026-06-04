@@ -635,6 +635,69 @@ if __name__ == '__main__':
         time.sleep(RUN_EVERY)
 
 
+def check_data_quality(conn=None):
+    """Check for repeating score patterns across rounds per source.
+    Returns dict of {source: {unique, total, repeats, repeat_pct, examples}}
+    Also stores results in data_quality table.
+    """
+    close = False
+    if conn is None:
+        conn = get_db()
+        close = True
+    try:
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS data_quality (
+                source TEXT, checked_at TIMESTAMP DEFAULT NOW(),
+                unique_patterns INT, total_rounds INT, repeats INT,
+                repeat_pct NUMERIC(5,1), PRIMARY KEY (source, checked_at)
+            )
+        """)
+        sources = ['bangbet', 'betkraft', 'bongobongo', 'betpawa']
+        results = {}
+        for src in sources:
+            cur.execute("""
+                SELECT COUNT(*) as total FROM rounds WHERE source=%s
+                AND jsonb_array_length(data->'matches') > 0
+            """, (src,))
+            total = cur.fetchone()['total']
+            if total < 5:
+                results[src] = {'unique':0,'total':total,'repeats':0,'repeat_pct':0.0,'examples':[]}
+                continue
+            cur.execute("""
+                WITH fps AS (
+                    SELECT round_id,
+                        (SELECT string_agg(
+                            COALESCE(m->>'hg','?')||'-'||COALESCE(m->>'ag','?'),
+                            '|' ORDER BY m->>'slot' NULLS LAST)
+                         FROM jsonb_array_elements(data->'matches') AS m
+                        ) AS fp
+                    FROM rounds WHERE source=%s
+                    AND jsonb_array_length(data->'matches') > 0
+                    ORDER BY round_id DESC LIMIT 500
+                )
+                SELECT fp, COUNT(*) as cnt, string_agg(round_id::text, ',') as rids
+                FROM fps WHERE fp IS NOT NULL
+                GROUP BY fp HAVING COUNT(*) > 1
+                ORDER BY cnt DESC
+            """, (src,))
+            repeats = cur.fetchall()
+            repeat_count = sum(r['cnt'] for r in repeats)
+            pct = round(100.0 * repeat_count / total, 1) if total > 0 else 0.0
+            unique = total - repeat_count
+            examples = [{'fp': r['fp'], 'count': r['cnt'], 'round_ids': r['rids'][:100]} for r in repeats[:5]]
+            results[src] = {'unique': unique, 'total': total, 'repeats': repeat_count, 'repeat_pct': pct, 'examples': examples}
+            cur.execute("""
+                INSERT INTO data_quality (source, unique_patterns, total_rounds, repeats, repeat_pct)
+                VALUES (%s,%s,%s,%s,%s)
+            """, (src, unique, total, repeat_count, pct))
+        conn.commit()
+        return results
+    finally:
+        if close:
+            conn.close()
+
+
 def learn_from_audit(source=None, max_entries=2000):
     """
     Self-learning feedback loop:

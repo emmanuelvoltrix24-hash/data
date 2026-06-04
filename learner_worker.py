@@ -3,7 +3,7 @@ import os, sys, json, time
 import psycopg2
 from psycopg2.extras import RealDictCursor
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from global_learner import build_fvecs, mine_rules, save_rules, init_tables, load_previous_rules, learn_from_audit
+from global_learner import build_fvecs, mine_rules, save_rules, init_tables, load_previous_rules, learn_from_audit, check_data_quality
 
 try: init_tables()
 except: pass
@@ -47,6 +47,15 @@ try:
                 print(f"[learner] {src} audit: {p} promoted, {d} demoted, {dl} deleted", flush=True)
         except Exception as ea:
             print(f"[learner] audit feedback FAILED: {ea}", flush=True)
+
+        # Step 1b: Check data quality (repeating score patterns)
+        try:
+            dq = check_data_quality()
+            for s, r in dq.items():
+                if r['repeat_pct'] > 5.0:
+                    print(f"[learner] WARN: {s} has {r['repeat_pct']}% repeating scores!", flush=True)
+        except Exception as eq:
+            print(f"[learner] data quality check FAILED: {eq}", flush=True)
 
         # Step 2: Mine new rules (save_rules preserves adjusted EV via snapshot)
         fv, su = build_fvecs(rounds)
