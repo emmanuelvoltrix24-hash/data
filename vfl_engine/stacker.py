@@ -157,7 +157,9 @@ def stack_slot(slot_features, source, dim_rules, market_config):
                 break
         
         matching_rules = dim_rules.get(dim_name, [])
-        relevant = [r for r in matching_rules if current_val == r.get("value")]
+        # Normalize both to string for comparison (DB stores strings)
+        current_val_str = str(current_val) if current_val is not None else None
+        relevant = [r for r in matching_rules if current_val_str == str(r.get("value"))]
         
         if relevant:
             avg_prec = sum(r["precision"] for r in relevant) / len(relevant)

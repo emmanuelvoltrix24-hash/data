@@ -125,14 +125,17 @@ def predict_round(source, limit=50):
                         cur.execute("""
                             INSERT INTO predictions
                             (round_id, source, slot, target, pred_type, pred_val,
-                             precision, confidence, created_at, conditions)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                             precision, confidence, created_at)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            ON CONFLICT (round_id, source, slot, target)
+                            DO UPDATE SET precision=EXCLUDED.precision,
+                                          confidence=EXCLUDED.confidence,
+                                          created_at=EXCLUDED.created_at
                         """, (
                             round_id, source, f"M{slot_num}",
                             target_str, target_key, str(target_val),
                             result['top_prob'], 'HIGH' if result['top_prob'] > 0.7 else 'MEDIUM',
-                            datetime.now(),
-                            json.dumps({'stack': result['top_scores'], 'source': source})
+                            datetime.now()
                         ))
             
             conn.commit()
@@ -208,7 +211,7 @@ def run_audit(source, limit=100):
                      pred_val, actual_val, was_correct, precision_at_time, checked_at)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
-                    row['id'], row['round_id'], source, str(slot),
+                    None, row['round_id'], source, str(slot),
                     f"M{slot}_score", 'cs',
                     str(top3), f"{actual_hg}-{actual_ag}",
                     audit_result['exact'], row['top_prob'],
@@ -228,8 +231,8 @@ def clean_old_rules(max_age_hours=48):
         with conn.cursor() as cur:
             cur.execute("""
                 DELETE FROM global_failed_rules
-                WHERE failed_at < NOW() - INTERVAL '%s hours'
-            """, (str(max_age_hours),))
+                WHERE failed_at < NOW() - INTERVAL '48 hours'
+            """)
             deleted = cur.rowcount
             if deleted > 0:
                 print(f"  Cleaned {deleted} old failed rules", flush=True)

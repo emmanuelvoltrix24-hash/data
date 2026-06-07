@@ -127,7 +127,7 @@ def load_features_from_db(source=None, limit=500):
     return all_features
 
 
-def mine_runs(all_features, source, min_hits=5, min_precision=0.75):
+def mine_runs(all_features, source, min_hits=3, min_precision=0.65):
     """
     Mine dimension rules from a sequence of round feature dicts.
     For each dimension, find feature conditions that predict the next round's dimension value.
@@ -160,20 +160,17 @@ def mine_runs(all_features, source, min_hits=5, min_precision=0.75):
                     curr_slot = all_features[i].get(slot, {})
                     next_slot = all_features[i + 1].get(slot, {})
                     
-                    curr_parity = curr_slot.get('M_parity')
-                    curr_outcome = curr_slot.get('M_outcome')
                     next_val = next_slot.get(f'M_{feat_key}')
+                    if next_val is None:
+                        continue
                     
-                    if curr_parity is not None and next_val is not None:
-                        ck = f'M{slot}_parity'
-                        cv = str(curr_parity)
-                        condition_counts[(ck, cv)]['total'] += weights[i]
-                        if next_val == dim_val:
-                            condition_counts[(ck, cv)]['hits'] += weights[i]
-                    
-                    if curr_outcome is not None and next_val is not None:
-                        ck = f'M{slot}_outcome'
-                        cv = str(curr_outcome)
+                    # Try ALL features in the current slot as conditions
+                    for cond_feat, cond_val in curr_slot.items():
+                        if cond_feat == f'M_{feat_key}':
+                            # Same feature: auto-correlation
+                            continue
+                        cv = str(cond_val)
+                        ck = f'M{slot}_{cond_feat[2:]}'
                         condition_counts[(ck, cv)]['total'] += weights[i]
                         if next_val == dim_val:
                             condition_counts[(ck, cv)]['hits'] += weights[i]
